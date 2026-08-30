@@ -45,7 +45,7 @@ Do you want to uninstall Drive Agent from this PC?
 
 The installer copies the no-console agent to `C:\Program Files\SystemMonitorDriveAgent\agent_client.exe`, creates a Windows scheduled task named `SystemMonitorDriveAgent`, and starts the first background sync immediately.
 
-By default, file scanning skips the `D:` drive. The agent still reports storage capacity for the machine so the dashboard can show device/storage status quickly. The Files section lists discovered files and shows View/Download actions. Download is available for stored file copies up to 5 MB by default. If the exe is built without the Render `AGENT_API_TOKEN`, Render will reject the sync and the PC will not appear on the dashboard.
+By default, file scanning skips the `C:` drive. The agent still reports storage capacity for the machine so the dashboard can show device/storage status quickly. The Files section lists discovered files and shows View/Download actions. Download is available for stored file copies up to 5 MB by default. If the exe is built without the Render `AGENT_API_TOKEN`, Render will reject the sync and the PC will not appear on the dashboard.
 
 If Windows Defender flags the executable, use code signing or submit the file to Microsoft as a false positive; do not disable Windows security.
 

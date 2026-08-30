@@ -2,7 +2,7 @@
   "server_url": "https://drive-monitor.onrender.com/api/agent/sync/",
   "token": "paste-your-agent-api-token-here",
   "interval": 300,
-  "exclude_drives": "D:",
+  "exclude_drives": "C:",
   "upload_content": true,
   "max_upload_bytes": 5242880
 }

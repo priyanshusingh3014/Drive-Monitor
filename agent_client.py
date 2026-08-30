@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_SERVER_URL = 'https://drive-monitor.onrender.com/api/agent/sync/'
-DEFAULT_EXCLUDED_DRIVES = 'D:'
+DEFAULT_EXCLUDED_DRIVES = 'C:'
 DEFAULT_AGENT_TOKEN = ''
 DEFAULT_UPLOAD_CONTENT = True
 DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
