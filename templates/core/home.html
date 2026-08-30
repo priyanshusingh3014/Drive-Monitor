@@ -24,7 +24,9 @@
         <select id="device-select" class="device-select">
             {% if devices %}
                 {% for device in devices %}
-                    <option>{{ device.hostname }}</option>
+                    <option value="{{ device.device_id }}">
+                        {{ device.hostname }}{% if device.username %} ({{ device.username }}){% endif %}
+                    </option>
                 {% endfor %}
             {% else %}
                 <option>No Devices Enrolled</option>

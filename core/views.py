@@ -29,7 +29,7 @@ def format_size(size_bytes):
 
 def format_storage_pair(used_bytes, total_bytes):
     if not total_bytes:
-        return '0 B / 0 B'
+        return '0 GB / 0 GB'
     return f'{format_size(used_bytes)} / {format_size(total_bytes)}'
 
 
@@ -45,16 +45,35 @@ def storage_status(used_bytes, total_bytes):
     return 'Optimal'
 
 
+def non_negative_int(value):
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def online_devices():
     return EndpointDevice.objects.filter(last_seen__gte=timezone.now() - ONLINE_WINDOW)
 
 
+def device_storage_totals():
+    totals = EndpointDevice.objects.aggregate(
+        c_used=Sum('c_drive_used_bytes'),
+        c_total=Sum('c_drive_total_bytes'),
+        secondary_used=Sum('secondary_used_bytes'),
+        secondary_total=Sum('secondary_total_bytes'),
+    )
+    used_bytes = (totals['c_used'] or 0) + (totals['secondary_used'] or 0)
+    total_bytes = (totals['c_total'] or 0) + (totals['secondary_total'] or 0)
+    return used_bytes, total_bytes
+
+
 def home(request):
-    total_size = ArchivedFile.objects.aggregate(total=Sum('size_bytes'))['total'] or 0
+    storage_used, storage_total = device_storage_totals()
     context = {
         'active_page': 'dashboard',
         'active_agents': online_devices().count(),
-        'total_storage': format_size(total_size),
+        'total_storage': format_storage_pair(storage_used, storage_total),
         'devices': EndpointDevice.objects.all(),
     }
     return render(request, 'core/home.html', context)
@@ -161,7 +180,7 @@ def agent_sync(request):
         if not path:
             continue
 
-        size_bytes = max(int(item.get('size_bytes') or 0), 0)
+        size_bytes = non_negative_int(item.get('size_bytes'))
         modified_at = parse_datetime(str(item.get('modified_at') or '')) if item.get('modified_at') else None
         if modified_at and timezone.is_naive(modified_at):
             modified_at = timezone.make_aware(modified_at, datetime_timezone.utc)
@@ -192,15 +211,15 @@ def agent_sync(request):
     if not isinstance(secondary_drives, list):
         secondary_drives = []
 
-    c_total = max(int(c_drive.get('total_bytes') or 0), 0)
-    c_used = max(int(c_drive.get('used_bytes') or 0), 0)
+    c_total = non_negative_int(c_drive.get('total_bytes'))
+    c_used = non_negative_int(c_drive.get('used_bytes'))
     secondary_total = 0
     secondary_used = 0
     for drive_info in secondary_drives:
         if not isinstance(drive_info, dict):
             continue
-        secondary_total += max(int(drive_info.get('total_bytes') or 0), 0)
-        secondary_used += max(int(drive_info.get('used_bytes') or 0), 0)
+        secondary_total += non_negative_int(drive_info.get('total_bytes'))
+        secondary_used += non_negative_int(drive_info.get('used_bytes'))
 
     with transaction.atomic():
         device, _created = EndpointDevice.objects.update_or_create(

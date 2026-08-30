@@ -12,6 +12,7 @@ class HomePageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'System Telemetry &amp; Overview')
+        self.assertContains(response, '0 GB / 0 GB')
 
     def test_devices_page_loads(self):
         response = self.client.get(reverse('devices'))
@@ -100,3 +101,53 @@ class AgentSyncTests(TestCase):
         self.assertContains(storage_response, 'LAPTOP-TEST')
         self.assertContains(storage_response, '205 GB / 253 GB')
         self.assertContains(storage_response, '69.9 GB / 223 GB')
+
+        home_response = self.client.get(reverse('home'))
+        self.assertContains(home_response, '1 Agent')
+        self.assertContains(home_response, 'LAPTOP-TEST (tester)')
+        self.assertContains(home_response, '274.9 GB / 476 GB')
+
+    def test_agent_sync_handles_bad_byte_values(self):
+        payload = {
+            'device_id': 'test-device-2',
+            'hostname': 'LAPTOP-BAD-DATA',
+            'username': 'tester',
+            'platform': 'Windows',
+            'drives': ['E:'],
+            'storage': {
+                'c_drive': {
+                    'drive': 'C:',
+                    'total_bytes': 'not-a-number',
+                    'used_bytes': -100,
+                },
+                'secondary_drives': [
+                    {
+                        'drive': 'E:',
+                        'total_bytes': '2048',
+                        'used_bytes': '1024',
+                    }
+                ],
+            },
+            'files': [
+                {
+                    'drive': 'E:',
+                    'path': 'E:\\bad-size.txt',
+                    'size_bytes': 'not-a-number',
+                }
+            ],
+        }
+
+        response = self.client.post(
+            reverse('agent_sync'),
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        device = EndpointDevice.objects.get(device_id='test-device-2')
+        self.assertEqual(device.c_drive_total_bytes, 0)
+        self.assertEqual(device.c_drive_used_bytes, 0)
+        self.assertEqual(device.secondary_total_bytes, 2048)
+        self.assertEqual(device.secondary_used_bytes, 1024)
+        self.assertEqual(device.total_size_bytes, 0)
