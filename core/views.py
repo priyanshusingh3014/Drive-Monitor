@@ -27,6 +27,24 @@ def format_size(size_bytes):
         size /= 1024
 
 
+def format_storage_pair(used_bytes, total_bytes):
+    if not total_bytes:
+        return '0 B / 0 B'
+    return f'{format_size(used_bytes)} / {format_size(total_bytes)}'
+
+
+def storage_status(used_bytes, total_bytes):
+    if not total_bytes:
+        return 'Unknown'
+
+    usage_percent = (used_bytes / total_bytes) * 100
+    if usage_percent >= 90:
+        return 'Critical'
+    if usage_percent >= 80:
+        return 'Warning'
+    return 'Optimal'
+
+
 def online_devices():
     return EndpointDevice.objects.filter(last_seen__gte=timezone.now() - ONLINE_WINDOW)
 
@@ -56,6 +74,26 @@ def devices(request):
         'devices': all_devices,
     }
     return render(request, 'core/devices.html', context)
+
+
+def storage(request):
+    rows = []
+    for device in EndpointDevice.objects.all():
+        total_used = device.c_drive_used_bytes + device.secondary_used_bytes
+        total_capacity = device.c_drive_total_bytes + device.secondary_total_bytes
+        status = storage_status(total_used, total_capacity)
+        rows.append({
+            'device': device,
+            'c_drive': format_storage_pair(device.c_drive_used_bytes, device.c_drive_total_bytes),
+            'secondary_drives': format_storage_pair(device.secondary_used_bytes, device.secondary_total_bytes),
+            'status': status,
+            'status_class': status.lower(),
+        })
+
+    return render(request, 'core/storage.html', {
+        'active_page': 'storage',
+        'storage_rows': rows,
+    })
 
 
 def files(request):
@@ -142,6 +180,28 @@ def agent_sync(request):
     if not isinstance(drives, list):
         drives = []
 
+    storage = payload.get('storage', {})
+    if not isinstance(storage, dict):
+        storage = {}
+
+    c_drive = storage.get('c_drive', {})
+    if not isinstance(c_drive, dict):
+        c_drive = {}
+
+    secondary_drives = storage.get('secondary_drives', [])
+    if not isinstance(secondary_drives, list):
+        secondary_drives = []
+
+    c_total = max(int(c_drive.get('total_bytes') or 0), 0)
+    c_used = max(int(c_drive.get('used_bytes') or 0), 0)
+    secondary_total = 0
+    secondary_used = 0
+    for drive_info in secondary_drives:
+        if not isinstance(drive_info, dict):
+            continue
+        secondary_total += max(int(drive_info.get('total_bytes') or 0), 0)
+        secondary_used += max(int(drive_info.get('used_bytes') or 0), 0)
+
     with transaction.atomic():
         device, _created = EndpointDevice.objects.update_or_create(
             device_id=device_id,
@@ -152,6 +212,11 @@ def agent_sync(request):
                 'drives': drives,
                 'total_files': len(records),
                 'total_size_bytes': total_size,
+                'c_drive_total_bytes': c_total,
+                'c_drive_used_bytes': c_used,
+                'secondary_total_bytes': secondary_total,
+                'secondary_used_bytes': secondary_used,
+                'storage_status': storage_status(c_used + secondary_used, c_total + secondary_total),
                 'last_seen': now,
             },
         )

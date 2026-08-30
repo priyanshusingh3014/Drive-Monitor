@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-DEFAULT_SERVER_URL = 'http://127.0.0.1:8000/api/agent/sync/'
+DEFAULT_SERVER_URL = 'https://drive-monitor.onrender.com/api/agent/sync/'
 APP_DISPLAY_NAME = 'Drive Agent'
 INSTALL_DIR_NAME = 'SystemMonitorDriveAgent'
 TASK_NAME = 'SystemMonitorDriveAgent'
@@ -361,7 +361,7 @@ def is_hidden_or_system(path):
     return bool(attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))
 
 
-def iter_non_c_drives():
+def iter_available_drives(include_c=True):
     if os.name == 'nt':
         import ctypes
 
@@ -371,7 +371,7 @@ def iter_non_c_drives():
                 continue
 
             letter = chr(65 + index)
-            if letter.upper() == 'C':
+            if not include_c and letter.upper() == 'C':
                 continue
 
             root = f'{letter}:\\'
@@ -383,6 +383,38 @@ def iter_non_c_drives():
     for mount in Path('/mnt').glob('*'):
         if mount.is_dir():
             yield str(mount)
+
+
+def iter_non_c_drives():
+    yield from iter_available_drives(include_c=False)
+
+
+def collect_storage_info():
+    c_drive = {}
+    secondary_drives = []
+
+    for root in iter_available_drives(include_c=True):
+        try:
+            usage = shutil.disk_usage(root)
+        except OSError:
+            continue
+
+        drive_info = {
+            'drive': str(root)[:2],
+            'total_bytes': usage.total,
+            'used_bytes': usage.total - usage.free,
+            'free_bytes': usage.free,
+        }
+
+        if str(root)[:1].upper() == 'C':
+            c_drive = drive_info
+        else:
+            secondary_drives.append(drive_info)
+
+    return {
+        'c_drive': c_drive,
+        'secondary_drives': secondary_drives,
+    }
 
 
 def iter_visible_files(root, include_hidden=False, max_files=0):
@@ -447,12 +479,14 @@ def post_payload(server_url, token, payload):
 
 def run_once(args):
     drives, files = scan_machine(include_hidden=args.include_hidden, max_files=args.max_files)
+    storage = collect_storage_info()
     payload = {
         'device_id': get_device_id(),
         'hostname': socket.gethostname(),
         'username': getpass.getuser(),
         'platform': platform.platform(),
         'drives': [drive[:2] for drive in drives],
+        'storage': storage,
         'files': files,
     }
 

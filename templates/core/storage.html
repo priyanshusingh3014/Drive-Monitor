@@ -1,0 +1,50 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Storage Vaults &amp; Locations{% endblock %}
+
+{% block content %}
+<section class="page-heading storage-heading" aria-labelledby="storage-title">
+    <h1 id="storage-title">Storage Vaults &amp; Locations</h1>
+    <p>Manage local and network storage volumes across enrolled devices</p>
+</section>
+
+<section class="storage-panel" aria-label="Storage vaults and locations">
+    {% if storage_rows %}
+        <div class="file-table-wrapper storage-table-wrapper">
+            <table class="data-table storage-table">
+                <thead>
+                    <tr>
+                        <th>Pool Name</th>
+                        <th>C: Drive Storage</th>
+                        <th>Secondary Drives Storage</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in storage_rows %}
+                        <tr>
+                            <td>
+                                <span class="pool-name">
+                                    <i data-lucide="server"></i>
+                                    <span>{{ row.device.hostname }}{% if row.device.username %} ({{ row.device.username }}){% endif %}</span>
+                                </span>
+                            </td>
+                            <td class="storage-value">{{ row.c_drive }}</td>
+                            <td class="storage-value">{{ row.secondary_drives }}</td>
+                            <td>
+                                <span class="status-badge status-{{ row.status_class }}">&bull; {{ row.status }}</span>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <i data-lucide="database" class="empty-state-icon"></i>
+            <h3>No storage information yet.</h3>
+            <p>Install <code>agent_client.exe</code> on a PC to report drive capacity and usage.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

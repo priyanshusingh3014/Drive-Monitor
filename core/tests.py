@@ -28,6 +28,13 @@ class HomePageTests(TestCase):
         self.assertContains(response, 'Archived Drive Files')
         self.assertContains(response, 'No secondary drive files found yet.')
 
+    def test_storage_page_loads(self):
+        response = self.client.get(reverse('storage'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Storage Vaults &amp; Locations')
+        self.assertContains(response, 'No storage information yet.')
+
     def test_health_check_loads(self):
         response = self.client.get(reverse('healthz'))
 
@@ -43,6 +50,22 @@ class AgentSyncTests(TestCase):
             'username': 'tester',
             'platform': 'Windows',
             'drives': ['D:'],
+            'storage': {
+                'c_drive': {
+                    'drive': 'C:',
+                    'total_bytes': 271656009728,
+                    'used_bytes': 220117073920,
+                    'free_bytes': 51538935808,
+                },
+                'secondary_drives': [
+                    {
+                        'drive': 'D:',
+                        'total_bytes': 239444754432,
+                        'used_bytes': 75082653696,
+                        'free_bytes': 164362100736,
+                    }
+                ],
+            },
             'files': [
                 {
                     'drive': 'D:',
@@ -65,6 +88,15 @@ class AgentSyncTests(TestCase):
         self.assertEqual(EndpointDevice.objects.count(), 1)
         self.assertEqual(ArchivedFile.objects.count(), 1)
 
+        device = EndpointDevice.objects.get()
+        self.assertEqual(device.c_drive_total_bytes, 271656009728)
+        self.assertEqual(device.secondary_total_bytes, 239444754432)
+
         files_response = self.client.get(reverse('files'))
         self.assertContains(files_response, 'report.pdf')
         self.assertContains(files_response, 'LAPTOP-TEST')
+
+        storage_response = self.client.get(reverse('storage'))
+        self.assertContains(storage_response, 'LAPTOP-TEST')
+        self.assertContains(storage_response, '205 GB / 253 GB')
+        self.assertContains(storage_response, '69.9 GB / 223 GB')

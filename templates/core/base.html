@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}System Monitor{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'core/css/dashboard.css' %}?v=3">
+    <link rel="stylesheet" href="{% static 'core/css/dashboard.css' %}?v=4">
 </head>
 <body>
     <div class="app-shell">
@@ -27,7 +27,7 @@
                     <i data-lucide="monitor"></i>
                     <span>Devices</span>
                 </a>
-                <a class="nav-item" href="#">
+                <a class="nav-item{% if active_page == 'storage' %} is-active{% endif %}" href="{% url 'storage' %}"{% if active_page == 'storage' %} aria-current="page"{% endif %}>
                     <i data-lucide="database"></i>
                     <span>Storage</span>
                 </a>
