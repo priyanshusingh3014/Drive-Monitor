@@ -1,0 +1,98 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}System Monitor{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'core/css/dashboard.css' %}?v=3">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="Primary navigation">
+            <div class="brand">
+                <div class="brand-mark">SM</div>
+                <div>
+                    <div class="brand-title">SYSTEM</div>
+                    <div class="brand-subtitle">MONITOR</div>
+                </div>
+            </div>
+
+            <nav class="side-nav">
+                <a class="nav-item{% if active_page == 'dashboard' %} is-active{% endif %}" href="{% url 'home' %}"{% if active_page == 'dashboard' %} aria-current="page"{% endif %}>
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-item{% if active_page == 'devices' %} is-active{% endif %}" href="{% url 'devices' %}"{% if active_page == 'devices' %} aria-current="page"{% endif %}>
+                    <i data-lucide="monitor"></i>
+                    <span>Devices</span>
+                </a>
+                <a class="nav-item" href="#">
+                    <i data-lucide="database"></i>
+                    <span>Storage</span>
+                </a>
+                <a class="nav-item{% if active_page == 'files' %} is-active{% endif %}" href="{% url 'files' %}"{% if active_page == 'files' %} aria-current="page"{% endif %}>
+                    <i data-lucide="folder"></i>
+                    <span>Files</span>
+                </a>
+                <a class="nav-item" href="#">
+                    <i data-lucide="rotate-ccw"></i>
+                    <span>Recovery</span>
+                </a>
+                <a class="nav-item" href="#">
+                    <i data-lucide="shield"></i>
+                    <span>Security</span>
+                </a>
+                <a class="nav-item" href="#">
+                    <i data-lucide="clipboard-list"></i>
+                    <span>Logs</span>
+                </a>
+                <a class="nav-item" href="#">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-status">
+                <span class="status-dot"></span>
+                <span>System Operational</span>
+            </div>
+        </aside>
+
+        <header class="topbar">
+            <div class="topbar-center">
+                <span class="health-pill">
+                    <i data-lucide="shield"></i>
+                    <span>Monitor Agent Core v1.0.0 &bull; Status: <strong>Healthy</strong></span>
+                </span>
+            </div>
+            <div class="admin-profile">
+                <div class="admin-avatar">
+                    <i data-lucide="user-round"></i>
+                </div>
+                <div>
+                    <div class="admin-name">Admin User</div>
+                    <div class="admin-role">Super Admin</div>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="app-footer">
+            <div class="copyright">
+                <span class="status-dot"></span>
+                <span>&copy; 2026 System Monitor. All rights reserved.</span>
+            </div>
+            <div class="security-badge">Encrypted TLS v1.3 &bull; AES-256 Storage</div>
+        </footer>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        window.lucide && window.lucide.createIcons();
+    </script>
+</body>
+</html>

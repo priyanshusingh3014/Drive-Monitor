@@ -1,0 +1,168 @@
+import json
+from datetime import timedelta, timezone as datetime_timezone
+
+from django.conf import settings
+from django.db import transaction
+from django.db.models import Sum
+from django.http import JsonResponse
+from django.shortcuts import render
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+from .models import ArchivedFile, EndpointDevice
+
+
+ONLINE_WINDOW = timedelta(minutes=10)
+
+
+def format_size(size_bytes):
+    size = float(size_bytes or 0)
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if size < 1024 or unit == 'TB':
+            if unit == 'B':
+                return f'{int(size)} B'
+            return f'{size:.1f} {unit}'.replace('.0 ', ' ')
+        size /= 1024
+
+
+def online_devices():
+    return EndpointDevice.objects.filter(last_seen__gte=timezone.now() - ONLINE_WINDOW)
+
+
+def home(request):
+    total_size = ArchivedFile.objects.aggregate(total=Sum('size_bytes'))['total'] or 0
+    context = {
+        'active_page': 'dashboard',
+        'active_agents': online_devices().count(),
+        'total_storage': format_size(total_size),
+        'devices': EndpointDevice.objects.all(),
+    }
+    return render(request, 'core/home.html', context)
+
+
+def healthz(request):
+    return JsonResponse({'ok': True})
+
+
+def devices(request):
+    active_devices = online_devices()
+    all_devices = EndpointDevice.objects.all()
+    context = {
+        'active_page': 'devices',
+        'active_devices': active_devices.count(),
+        'offline_devices': all_devices.count() - active_devices.count(),
+        'devices': all_devices,
+    }
+    return render(request, 'core/devices.html', context)
+
+
+def files(request):
+    selected_device = request.GET.get('device', '')
+    selected_drive = request.GET.get('drive', '')
+
+    devices_qs = EndpointDevice.objects.all()
+    files_qs = ArchivedFile.objects.select_related('device').all()
+
+    if selected_device:
+        files_qs = files_qs.filter(device_id=selected_device)
+
+    drive_options_qs = files_qs.values_list('drive', flat=True).distinct().order_by('drive')
+
+    if selected_drive:
+        files_qs = files_qs.filter(drive=selected_drive)
+
+    file_count = files_qs.count()
+    total_size = files_qs.aggregate(total=Sum('size_bytes'))['total'] or 0
+    files_list = list(files_qs[:500])
+
+    context = {
+        'active_page': 'files',
+        'devices': devices_qs,
+        'drive_options': drive_options_qs,
+        'selected_device': selected_device,
+        'selected_drive': selected_drive,
+        'file_count': file_count,
+        'total_size': format_size(total_size),
+        'archived_files': files_list,
+        'shown_file_count': len(files_list),
+    }
+    return render(request, 'core/files.html', context)
+
+
+@csrf_exempt
+@require_POST
+def agent_sync(request):
+    if settings.AGENT_API_TOKEN:
+        expected = f'Bearer {settings.AGENT_API_TOKEN}'
+        if request.headers.get('Authorization') != expected:
+            return JsonResponse({'ok': False, 'error': 'Unauthorized'}, status=401)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+    device_id = str(payload.get('device_id', '')).strip()
+    hostname = str(payload.get('hostname', '')).strip()
+    files = payload.get('files', [])
+
+    if not device_id or not hostname or not isinstance(files, list):
+        return JsonResponse({'ok': False, 'error': 'device_id, hostname, and files are required'}, status=400)
+
+    now = timezone.now()
+    records = []
+    total_size = 0
+
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+
+        path = str(item.get('path', '')).strip()
+        if not path:
+            continue
+
+        size_bytes = max(int(item.get('size_bytes') or 0), 0)
+        modified_at = parse_datetime(str(item.get('modified_at') or '')) if item.get('modified_at') else None
+        if modified_at and timezone.is_naive(modified_at):
+            modified_at = timezone.make_aware(modified_at, datetime_timezone.utc)
+
+        total_size += size_bytes
+        records.append(ArchivedFile(
+            drive=str(item.get('drive', ''))[:8],
+            path=path,
+            name=str(item.get('name') or path.split('\\')[-1])[:512],
+            extension=str(item.get('extension') or '')[:64],
+            size_bytes=size_bytes,
+            modified_at=modified_at,
+        ))
+
+    drives = payload.get('drives', [])
+    if not isinstance(drives, list):
+        drives = []
+
+    with transaction.atomic():
+        device, _created = EndpointDevice.objects.update_or_create(
+            device_id=device_id,
+            defaults={
+                'hostname': hostname[:255],
+                'username': str(payload.get('username') or '')[:255],
+                'platform': str(payload.get('platform') or '')[:255],
+                'drives': drives,
+                'total_files': len(records),
+                'total_size_bytes': total_size,
+                'last_seen': now,
+            },
+        )
+        ArchivedFile.objects.filter(device=device).delete()
+        for record in records:
+            record.device = device
+        ArchivedFile.objects.bulk_create(records, batch_size=1000)
+
+    return JsonResponse({
+        'ok': True,
+        'device_id': device.device_id,
+        'file_count': len(records),
+        'total_size_bytes': total_size,
+    })

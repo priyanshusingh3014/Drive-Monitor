@@ -1,0 +1,57 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Registered Endpoint Devices{% endblock %}
+
+{% block content %}
+<section class="page-heading" aria-labelledby="devices-title">
+    <h1 id="devices-title">Registered Endpoint Devices</h1>
+    <p>Manage client backup agents and target file paths</p>
+</section>
+
+<section class="summary-grid" aria-label="Device summary">
+    <article class="metric-card accent-red">
+        <p class="metric-label">Active / Syncing</p>
+        <p class="metric-value">{{ active_devices }} Device{{ active_devices|pluralize }}</p>
+    </article>
+
+    <article class="metric-card accent-slate">
+        <p class="metric-label">Offline</p>
+        <p class="metric-value">{{ offline_devices }} Device{{ offline_devices|pluralize }}</p>
+    </article>
+</section>
+
+<section class="activity-panel device-empty-panel table-panel" aria-label="Registered devices">
+    {% if devices %}
+        <div class="file-table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>User</th>
+                        <th>Drives</th>
+                        <th>Files</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                        <tr>
+                            <td class="file-name">{{ device.hostname }}</td>
+                            <td>{{ device.username|default:"-" }}</td>
+                            <td>{{ device.drives|join:", "|default:"-" }}</td>
+                            <td>{{ device.total_files }}</td>
+                            <td>{{ device.last_seen|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <i data-lucide="monitor" class="empty-state-icon"></i>
+            <h3>No devices enrolled yet.</h3>
+            <p>Run <code>agent_client.exe</code> on any machine to register it as an active agent.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

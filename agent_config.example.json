@@ -1,0 +1,5 @@
+{
+  "server_url": "https://your-render-app.onrender.com/api/agent/sync/",
+  "token": "paste-your-agent-api-token-here",
+  "interval": 300
+}

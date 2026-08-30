@@ -1,0 +1,51 @@
+{% extends 'core/base.html' %}
+
+{% block title %}System Monitor Dashboard{% endblock %}
+
+{% block content %}
+<section class="page-heading" aria-labelledby="dashboard-title">
+    <h1 id="dashboard-title">System Telemetry &amp; Overview</h1>
+    <p>Real-time status of connected agents, system metrics, and vault storage</p>
+</section>
+
+<section class="summary-grid" aria-label="System summary">
+    <article class="metric-card accent-red">
+        <p class="metric-label">Active Agents</p>
+        <p class="metric-value">{{ active_agents }} Agent{{ active_agents|pluralize }}</p>
+    </article>
+
+    <article class="metric-card accent-red">
+        <p class="metric-label">Vault Storage Used</p>
+        <p class="metric-value">{{ total_storage }}</p>
+    </article>
+
+    <article class="metric-card accent-slate">
+        <label class="metric-label" for="device-select">Select Device</label>
+        <select id="device-select" class="device-select">
+            {% if devices %}
+                {% for device in devices %}
+                    <option>{{ device.hostname }}</option>
+                {% endfor %}
+            {% else %}
+                <option>No Devices Enrolled</option>
+            {% endif %}
+        </select>
+    </article>
+</section>
+
+<section class="activity-panel" aria-labelledby="activity-title">
+    <div class="panel-heading">
+        <h2 id="activity-title">Recent PC Changes</h2>
+        <button class="history-button" type="button">
+            <i data-lucide="trash-2"></i>
+            <span>Clear History</span>
+        </button>
+    </div>
+
+    <div class="empty-state">
+        <i data-lucide="monitor" class="empty-state-icon"></i>
+        <h3>No activity recorded yet.</h3>
+        <p>Run <code>agent_client.exe</code> on any machine to start monitoring.</p>
+    </div>
+</section>
+{% endblock %}

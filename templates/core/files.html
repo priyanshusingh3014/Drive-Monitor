@@ -1,0 +1,116 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Drive Files & Database Backups{% endblock %}
+
+{% block content %}
+<section class="page-heading" aria-labelledby="files-title">
+    <h1 id="files-title">Drive Files &amp; Database Backups</h1>
+    <p>Real-time synchronized file archive from non-C: drives - download any file at any time</p>
+</section>
+
+<section class="summary-grid" aria-label="Files summary">
+    <article class="metric-card accent-red">
+        <p class="metric-label">Files In Database</p>
+        <p class="metric-value">{{ file_count }} File{{ file_count|pluralize }}</p>
+    </article>
+
+    <article class="metric-card accent-red">
+        <p class="metric-label">Total Backup Size</p>
+        <p class="metric-value">{{ total_size }}</p>
+    </article>
+
+    <article class="metric-card accent-slate">
+        <p class="metric-label">Filter Device &amp; Drive</p>
+        <form class="filter-controls" method="get">
+            <select class="device-select filter-select" name="device" aria-label="Filter device" onchange="this.form.submit()">
+                {% if devices %}
+                    <option value="">All Devices</option>
+                    {% for device in devices %}
+                        <option value="{{ device.id }}" {% if selected_device == device.id|stringformat:"s" %}selected{% endif %}>{{ device.hostname }}</option>
+                    {% endfor %}
+                {% else %}
+                    <option value="">No Devices Connected</option>
+                {% endif %}
+            </select>
+            <select class="device-select filter-select" name="drive" aria-label="Filter drive" onchange="this.form.submit()">
+                {% if drive_options %}
+                    <option value="">All Secondary Drives</option>
+                    {% for drive in drive_options %}
+                        <option value="{{ drive }}" {% if selected_drive == drive %}selected{% endif %}>{{ drive }}</option>
+                    {% endfor %}
+                {% else %}
+                    <option value="">No Secondary Drive</option>
+                {% endif %}
+            </select>
+        </form>
+    </article>
+</section>
+
+<section class="sync-panel" aria-label="Drive upload progress">
+    <div class="sync-icon">
+        <i data-lucide="upload"></i>
+    </div>
+    <div class="sync-main">
+        <div class="sync-heading-row">
+            <h2>Drive Upload Progress</h2>
+            <strong>100%</strong>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+            <span></span>
+        </div>
+        <div class="sync-detail-row">
+            <p>All discovered user files uploaded to database</p>
+            <strong>Live Sync Active</strong>
+        </div>
+    </div>
+</section>
+
+<section class="archive-panel" aria-labelledby="archive-title">
+    <div class="panel-heading">
+        <h2 id="archive-title">Archived Drive Files</h2>
+        <a class="refresh-button" href="{% url 'files' %}">
+            <i data-lucide="refresh-cw"></i>
+            <span>Refresh</span>
+        </a>
+    </div>
+
+    {% if archived_files %}
+        <div class="file-table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Device</th>
+                        <th>Drive</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in archived_files %}
+                        <tr>
+                            <td>
+                                <div class="file-name">{{ file.name }}</div>
+                                <div class="file-path">{{ file.path }}</div>
+                            </td>
+                            <td>{{ file.device.hostname }}</td>
+                            <td>{{ file.drive }}</td>
+                            <td>{{ file.size_bytes }} B</td>
+                            <td>{{ file.modified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if file_count > shown_file_count %}
+                <p class="panel-note">Showing first {{ shown_file_count }} of {{ file_count }} files.</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="empty-state archive-empty-state">
+            <i data-lucide="folder" class="empty-state-icon"></i>
+            <h3>No secondary drive files found yet.</h3>
+            <p>Run <code>agent_client.exe</code> to scan visible files on non-C: drives.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
