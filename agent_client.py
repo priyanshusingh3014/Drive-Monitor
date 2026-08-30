@@ -32,10 +32,38 @@ MB_ICONINFORMATION = 0x40
 MB_ICONQUESTION = 0x20
 MB_ICONERROR = 0x10
 IDYES = 6
+SW_HIDE = 0
 
 
 def is_windows():
     return os.name == 'nt'
+
+
+def write_output(message, error=False):
+    stream = sys.stderr if error else sys.stdout
+    if stream is None:
+        return
+
+    try:
+        print(message, file=stream)
+    except OSError:
+        pass
+
+
+def hidden_process_kwargs():
+    if is_windows():
+        return {'creationflags': subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+def run_hidden_process(command, check=False):
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=check,
+        **hidden_process_kwargs(),
+    )
 
 
 def current_program_path():
@@ -87,7 +115,7 @@ def show_message(message, title=APP_DISPLAY_NAME, flags=MB_OK | MB_ICONINFORMATI
 
         return ctypes.windll.user32.MessageBoxW(None, message, title, flags)
 
-    print(message)
+    write_output(message)
     return IDYES
 
 
@@ -116,7 +144,7 @@ def relaunch_as_admin(extra_args):
         executable = str(Path(sys.executable).resolve())
         params = subprocess.list2cmdline([str(Path(__file__).resolve()), *extra_args])
 
-    result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', executable, params, None, 1)
+    result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', executable, params, None, SW_HIDE)
     return result > 32
 
 
@@ -124,16 +152,19 @@ def scheduled_task_exists():
     if not is_windows():
         return False
 
-    result = subprocess.run(
-        ['schtasks', '/Query', '/TN', TASK_NAME],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = run_hidden_process(['schtasks', '/Query', '/TN', TASK_NAME])
+    except OSError:
+        return False
     return result.returncode == 0
 
 
 def is_installed():
-    return get_installed_exe_path().exists() or scheduled_task_exists()
+    return (
+        get_installed_exe_path().exists()
+        or (get_install_dir() / CONFIG_FILE_NAME).exists()
+        or scheduled_task_exists()
+    )
 
 
 def path_is_inside(child, parent):
@@ -165,7 +196,7 @@ def write_install_config(args):
 
 def create_scheduled_task(installed_exe, args):
     command = subprocess.list2cmdline([str(installed_exe), *build_watch_args(args)])
-    subprocess.run(
+    run_hidden_process(
         [
             'schtasks',
             '/Create',
@@ -180,36 +211,57 @@ def create_scheduled_task(installed_exe, args):
             '/F',
         ],
         check=True,
-        capture_output=True,
-        text=True,
     )
-    subprocess.run(['schtasks', '/Run', '/TN', TASK_NAME], capture_output=True, text=True)
+    run_hidden_process(['schtasks', '/Run', '/TN', TASK_NAME])
 
 
 def delete_scheduled_task():
     if not scheduled_task_exists():
         return
 
-    subprocess.run(['schtasks', '/End', '/TN', TASK_NAME], capture_output=True, text=True)
-    subprocess.run(
+    run_hidden_process(['schtasks', '/End', '/TN', TASK_NAME])
+    run_hidden_process(
         ['schtasks', '/Delete', '/TN', TASK_NAME, '/F'],
         check=True,
-        capture_output=True,
-        text=True,
     )
+
+
+def copy_agent_bundle(source, install_dir, installed_exe):
+    source = source.resolve()
+    install_dir.mkdir(parents=True, exist_ok=True)
+
+    if source.parent.resolve() == install_dir.resolve():
+        return
+
+    if source != installed_exe.resolve():
+        shutil.copy2(source, installed_exe)
+
+    source_internal_dir = source.parent / '_internal'
+    if not source_internal_dir.exists():
+        return
+
+    target_internal_dir = install_dir / '_internal'
+    if target_internal_dir.exists():
+        if not path_is_inside(target_internal_dir, install_dir):
+            raise RuntimeError(f'Unsafe install folder: {target_internal_dir}')
+        shutil.rmtree(target_internal_dir)
+
+    shutil.copytree(source_internal_dir, target_internal_dir)
 
 
 def install_agent(args):
     install_dir = get_install_dir()
     installed_exe = get_installed_exe_path()
-    install_dir.mkdir(parents=True, exist_ok=True)
 
     source = current_program_path()
-    if source != installed_exe:
-        shutil.copy2(source, installed_exe)
-
+    copy_agent_bundle(source, install_dir, installed_exe)
     write_install_config(args)
     create_scheduled_task(installed_exe, args)
+
+    if not installed_exe.exists():
+        raise RuntimeError('Installed agent executable was not created.')
+    if not scheduled_task_exists():
+        raise RuntimeError('Windows scheduled task was not created.')
 
 
 def remove_install_dir_later(install_dir):
@@ -218,7 +270,7 @@ def remove_install_dir_later(install_dir):
         ['cmd.exe', '/c', command],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
+        **hidden_process_kwargs(),
     )
 
 
@@ -240,8 +292,11 @@ def uninstall_agent():
 
 def run_install_ui(args):
     if not is_windows():
-        print('Install/uninstall UI is only available on Windows.', file=sys.stderr)
+        write_output('Install/uninstall UI is only available on Windows.', error=True)
         return 1
+
+    if is_installed():
+        return run_uninstall_ui()
 
     if not is_admin():
         admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
@@ -276,7 +331,7 @@ def run_install_ui(args):
 
 def run_uninstall_ui():
     if not is_windows():
-        print('Install/uninstall UI is only available on Windows.', file=sys.stderr)
+        write_output('Install/uninstall UI is only available on Windows.', error=True)
         return 1
 
     if not is_admin():
@@ -491,22 +546,22 @@ def run_once(args):
     }
 
     if args.dry_run:
-        print(f'Found {len(files)} visible file(s) on {len(drives)} non-C drive(s).')
+        write_output(f'Found {len(files)} visible file(s) on {len(drives)} non-C drive(s).')
         return True
 
     try:
         result = post_payload(args.server_url, args.token, payload)
     except HTTPError as exc:
-        print(f'Sync failed: HTTP {exc.code} {exc.reason}', file=sys.stderr)
+        write_output(f'Sync failed: HTTP {exc.code} {exc.reason}', error=True)
         return False
     except URLError as exc:
-        print(f'Sync failed: {exc.reason}', file=sys.stderr)
+        write_output(f'Sync failed: {exc.reason}', error=True)
         return False
     except TimeoutError:
-        print('Sync failed: request timed out', file=sys.stderr)
+        write_output('Sync failed: request timed out', error=True)
         return False
 
-    print(f"Synced {result.get('file_count', 0)} file(s) from {socket.gethostname()}.")
+    write_output(f"Synced {result.get('file_count', 0)} file(s) from {socket.gethostname()}.")
     return True
 
 
