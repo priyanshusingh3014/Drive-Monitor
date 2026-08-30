@@ -16,6 +16,8 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_SERVER_URL = 'https://drive-monitor.onrender.com/api/agent/sync/'
+DEFAULT_EXCLUDED_DRIVES = 'D:'
+DEFAULT_AGENT_TOKEN = ''
 APP_DISPLAY_NAME = 'Drive Agent'
 INSTALL_DIR_NAME = 'SystemMonitorDriveAgent'
 TASK_NAME = 'SystemMonitorDriveAgent'
@@ -177,6 +179,8 @@ def path_is_inside(child, parent):
 
 def build_watch_args(args):
     watch_args = ['--watch']
+    if args.exclude_drives:
+        watch_args.extend(['--exclude-drives', args.exclude_drives])
     if args.include_hidden:
         watch_args.append('--include-hidden')
     if args.max_files > 0:
@@ -190,6 +194,7 @@ def write_install_config(args):
         'server_url': args.server_url,
         'token': args.token,
         'interval': args.interval,
+        'exclude_drives': args.exclude_drives,
     }
     config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
@@ -300,6 +305,8 @@ def run_install_ui(args):
 
     if not is_admin():
         admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
+        if args.exclude_drives:
+            admin_args.extend(['--exclude-drives', args.exclude_drives])
         if args.token:
             admin_args.extend(['--token', args.token])
         if args.include_hidden:
@@ -440,8 +447,35 @@ def iter_available_drives(include_c=True):
             yield str(mount)
 
 
-def iter_non_c_drives():
-    yield from iter_available_drives(include_c=False)
+def normalize_drive_name(drive):
+    drive_text = str(drive or '').strip().replace('/', '\\')
+    if not drive_text:
+        return ''
+
+    if len(drive_text) >= 2 and drive_text[1] == ':':
+        return f'{drive_text[0].upper()}:'
+
+    return drive_text.rstrip('\\').upper()
+
+
+def parse_drive_list(value):
+    if isinstance(value, (list, tuple, set)):
+        raw_items = value
+    else:
+        raw_items = str(value or '').split(',')
+
+    return {
+        normalized
+        for normalized in (normalize_drive_name(item) for item in raw_items)
+        if normalized
+    }
+
+
+def iter_scanned_drives(excluded_drives):
+    excluded = parse_drive_list(excluded_drives)
+    for drive in iter_available_drives(include_c=True):
+        if normalize_drive_name(drive) not in excluded:
+            yield drive
 
 
 def collect_storage_info():
@@ -505,8 +539,7 @@ def iter_visible_files(root, include_hidden=False, max_files=0):
                 return
 
 
-def scan_machine(include_hidden=False, max_files=0):
-    drives = list(iter_non_c_drives())
+def collect_files_from_drives(drives, include_hidden=False, max_files=0):
     files = []
 
     for drive in drives:
@@ -515,6 +548,12 @@ def scan_machine(include_hidden=False, max_files=0):
         if max_files > 0 and len(files) >= max_files:
             break
 
+    return files
+
+
+def scan_machine(excluded_drives=None, include_hidden=False, max_files=0):
+    drives = list(iter_scanned_drives(excluded_drives))
+    files = collect_files_from_drives(drives, include_hidden=include_hidden, max_files=max_files)
     return drives, files
 
 
@@ -523,6 +562,7 @@ def post_payload(server_url, token, payload):
     headers = {
         'Content-Type': 'application/json',
         'User-Agent': 'SystemMonitorAgent/1.0',
+        'X-Drive-Agent': 'SystemMonitorDriveAgent/1.0',
     }
     if token:
         headers['Authorization'] = f'Bearer {token}'
@@ -532,24 +572,38 @@ def post_payload(server_url, token, payload):
         return json.loads(response.read().decode('utf-8'))
 
 
-def run_once(args):
-    drives, files = scan_machine(include_hidden=args.include_hidden, max_files=args.max_files)
-    storage = collect_storage_info()
-    payload = {
-        'device_id': get_device_id(),
+def build_agent_payload(device_id, drives, storage, files, replace_files=True):
+    return {
+        'device_id': device_id,
         'hostname': socket.gethostname(),
         'username': getpass.getuser(),
         'platform': platform.platform(),
         'drives': [drive[:2] for drive in drives],
         'storage': storage,
         'files': files,
+        'replace_files': replace_files,
     }
 
+
+def run_once(args):
+    drives = list(iter_scanned_drives(args.exclude_drives))
+    storage = collect_storage_info()
+    device_id = get_device_id()
+
     if args.dry_run:
-        write_output(f'Found {len(files)} visible file(s) on {len(drives)} non-C drive(s).')
+        files = collect_files_from_drives(drives, include_hidden=args.include_hidden, max_files=args.max_files)
+        excluded = ', '.join(sorted(parse_drive_list(args.exclude_drives))) or 'none'
+        write_output(
+            f'Found {len(files)} visible file(s) on {len(drives)} scanned drive(s). '
+            f'Excluded drive(s): {excluded}.'
+        )
         return True
 
     try:
+        heartbeat_payload = build_agent_payload(device_id, drives, storage, [], replace_files=False)
+        post_payload(args.server_url, args.token, heartbeat_payload)
+        files = collect_files_from_drives(drives, include_hidden=args.include_hidden, max_files=args.max_files)
+        payload = build_agent_payload(device_id, drives, storage, files, replace_files=True)
         result = post_payload(args.server_url, args.token, payload)
     except HTTPError as exc:
         write_output(f'Sync failed: HTTP {exc.code} {exc.reason}', error=True)
@@ -567,13 +621,23 @@ def run_once(args):
 
 def parse_args():
     app_config = load_app_config()
+    default_excluded_drives = (
+        os.environ.get('AGENT_EXCLUDED_DRIVES')
+        or app_config.get('exclude_drives')
+        or DEFAULT_EXCLUDED_DRIVES
+    )
+    if isinstance(default_excluded_drives, (list, tuple, set)):
+        default_excluded_drives = ','.join(str(item) for item in default_excluded_drives)
+    else:
+        default_excluded_drives = str(default_excluded_drives)
     parser = argparse.ArgumentParser(description='System Monitor drive file scanner')
     parser.add_argument('--server-url', default=os.environ.get('AGENT_SERVER_URL') or app_config.get('server_url') or DEFAULT_SERVER_URL)
-    parser.add_argument('--token', default=os.environ.get('AGENT_TOKEN') or app_config.get('token') or '')
+    parser.add_argument('--token', default=os.environ.get('AGENT_TOKEN') or app_config.get('token') or DEFAULT_AGENT_TOKEN)
     parser.add_argument('--install-ui', action='store_true', help='show the Windows install prompt')
     parser.add_argument('--uninstall-ui', action='store_true', help='show the Windows uninstall prompt')
     parser.add_argument('--watch', action='store_true', help='keep scanning on an interval')
     parser.add_argument('--interval', type=int, default=int(os.environ.get('AGENT_SCAN_INTERVAL_SECONDS') or app_config.get('interval') or '300'))
+    parser.add_argument('--exclude-drives', default=default_excluded_drives, help='comma-separated drive letters to skip for file scanning')
     parser.add_argument('--include-hidden', action='store_true', help='include hidden/system files')
     parser.add_argument('--max-files', type=int, default=int(os.environ.get('AGENT_MAX_FILES', '0')), help='limit files for testing; default scans all')
     parser.add_argument('--dry-run', action='store_true', help='scan and print the count without sending data')

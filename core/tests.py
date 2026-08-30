@@ -1,6 +1,6 @@
 import json
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import ArchivedFile, EndpointDevice
@@ -107,6 +107,22 @@ class AgentSyncTests(TestCase):
         self.assertContains(home_response, 'LAPTOP-TEST (tester)')
         self.assertContains(home_response, '274.9 GB / 476 GB')
 
+        heartbeat = payload | {
+            'files': [],
+            'replace_files': False,
+        }
+
+        heartbeat_response = self.client.post(
+            reverse('agent_sync'),
+            data=json.dumps(heartbeat),
+            content_type='application/json',
+        )
+
+        self.assertEqual(heartbeat_response.status_code, 200)
+        device.refresh_from_db()
+        self.assertEqual(device.total_files, 1)
+        self.assertEqual(ArchivedFile.objects.count(), 1)
+
     def test_agent_sync_handles_bad_byte_values(self):
         payload = {
             'device_id': 'test-device-2',
@@ -151,3 +167,19 @@ class AgentSyncTests(TestCase):
         self.assertEqual(device.secondary_total_bytes, 2048)
         self.assertEqual(device.secondary_used_bytes, 1024)
         self.assertEqual(device.total_size_bytes, 0)
+
+    @override_settings(AGENT_API_TOKEN='secret-token')
+    def test_agent_sync_rejects_missing_token(self):
+        payload = {
+            'device_id': 'blocked-agent-1',
+            'hostname': 'BLOCKED-LAPTOP',
+            'files': [],
+        }
+
+        response = self.client.post(
+            reverse('agent_sync'),
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 401)

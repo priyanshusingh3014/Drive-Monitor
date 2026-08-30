@@ -1,5 +1,6 @@
 {
   "server_url": "https://drive-monitor.onrender.com/api/agent/sync/",
   "token": "paste-your-agent-api-token-here",
-  "interval": 300
+  "interval": 300,
+  "exclude_drives": "D:"
 }

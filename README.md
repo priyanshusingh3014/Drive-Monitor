@@ -28,10 +28,10 @@ Hidden and system files are skipped by default.
 Build the Windows agent with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_agent.ps1
+powershell -ExecutionPolicy Bypass -File .\build_agent.ps1 -AgentToken "paste-your-render-agent-api-token-here"
 ```
 
-Double-click `dist\agent_client\agent_client.exe` with no options to install it. Windows will ask for administrator permission, then the app asks:
+Double-click `dist\agent_client.exe` with no options to install it. Windows will ask for administrator permission, then the app asks:
 
 ```text
 Do you want to install the Drive Agent on this PC?
@@ -43,24 +43,26 @@ After install, double-click the same `.exe` again to uninstall it. It will ask:
 Do you want to uninstall Drive Agent from this PC?
 ```
 
-The installer copies the no-console agent bundle to `C:\Program Files\SystemMonitorDriveAgent\agent_client.exe`, creates a Windows scheduled task named `SystemMonitorDriveAgent`, and starts the first background sync immediately.
+The installer copies the no-console agent to `C:\Program Files\SystemMonitorDriveAgent\agent_client.exe`, creates a Windows scheduled task named `SystemMonitorDriveAgent`, and starts the first background sync immediately.
 
-Keep the generated `_internal` folder beside `agent_client.exe` when sharing the build folder. If Windows Defender flags the executable, use code signing or submit the file to Microsoft as a false positive; do not disable Windows security.
+By default, file scanning skips the `D:` drive. The agent still reports storage capacity for the machine so the dashboard can show device/storage status quickly. If the exe is built without the Render `AGENT_API_TOKEN`, Render will reject the sync and the PC will not appear on the dashboard.
+
+If Windows Defender flags the executable, use code signing or submit the file to Microsoft as a false positive; do not disable Windows security.
 
 For a one-time manual sync:
 
 ```powershell
-.\dist\agent_client\agent_client.exe --server-url https://drive-monitor.onrender.com/api/agent/sync/
+.\dist\agent_client.exe --server-url https://drive-monitor.onrender.com/api/agent/sync/
 ```
 
 For a small test scan:
 
 ```powershell
-.\dist\agent_client\agent_client.exe --max-files 10 --server-url https://drive-monitor.onrender.com/api/agent/sync/
+.\dist\agent_client.exe --max-files 10 --server-url https://drive-monitor.onrender.com/api/agent/sync/
 ```
 
 For continuous scanning:
 
 ```powershell
-.\dist\agent_client\agent_client.exe --watch --interval 300 --server-url https://drive-monitor.onrender.com/api/agent/sync/
+.\dist\agent_client.exe --watch --interval 300 --server-url https://drive-monitor.onrender.com/api/agent/sync/
 ```

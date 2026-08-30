@@ -7,6 +7,7 @@ staticfiles/
 .DS_Store
 *.log
 .agent/
+.agent_build/
 build/
 dist/
 *.spec

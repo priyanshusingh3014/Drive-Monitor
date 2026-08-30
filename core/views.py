@@ -164,6 +164,7 @@ def agent_sync(request):
     device_id = str(payload.get('device_id', '')).strip()
     hostname = str(payload.get('hostname', '')).strip()
     files = payload.get('files', [])
+    replace_files = payload.get('replace_files', True)
 
     if not device_id or not hostname or not isinstance(files, list):
         return JsonResponse({'ok': False, 'error': 'device_id, hostname, and files are required'}, status=400)
@@ -222,27 +223,33 @@ def agent_sync(request):
         secondary_used += non_negative_int(drive_info.get('used_bytes'))
 
     with transaction.atomic():
+        defaults = {
+            'hostname': hostname[:255],
+            'username': str(payload.get('username') or '')[:255],
+            'platform': str(payload.get('platform') or '')[:255],
+            'drives': drives,
+            'c_drive_total_bytes': c_total,
+            'c_drive_used_bytes': c_used,
+            'secondary_total_bytes': secondary_total,
+            'secondary_used_bytes': secondary_used,
+            'storage_status': storage_status(c_used + secondary_used, c_total + secondary_total),
+            'last_seen': now,
+        }
+
+        if replace_files:
+            defaults['total_files'] = len(records)
+            defaults['total_size_bytes'] = total_size
+
         device, _created = EndpointDevice.objects.update_or_create(
             device_id=device_id,
-            defaults={
-                'hostname': hostname[:255],
-                'username': str(payload.get('username') or '')[:255],
-                'platform': str(payload.get('platform') or '')[:255],
-                'drives': drives,
-                'total_files': len(records),
-                'total_size_bytes': total_size,
-                'c_drive_total_bytes': c_total,
-                'c_drive_used_bytes': c_used,
-                'secondary_total_bytes': secondary_total,
-                'secondary_used_bytes': secondary_used,
-                'storage_status': storage_status(c_used + secondary_used, c_total + secondary_total),
-                'last_seen': now,
-            },
+            defaults=defaults,
         )
-        ArchivedFile.objects.filter(device=device).delete()
-        for record in records:
-            record.device = device
-        ArchivedFile.objects.bulk_create(records, batch_size=1000)
+
+        if replace_files:
+            ArchivedFile.objects.filter(device=device).delete()
+            for record in records:
+                record.device = device
+            ArchivedFile.objects.bulk_create(records, batch_size=1000)
 
     return JsonResponse({
         'ok': True,
