@@ -24,7 +24,7 @@
         <select id="device-select" class="device-select">
             {% if devices %}
                 {% for device in devices %}
-                    <option value="{{ device.device_id }}">
+                    <option value="{{ device.device_id }}"{% if device.device_id == selected_device_id %} selected{% endif %}>
                         {{ device.hostname }}{% if device.username %} ({{ device.username }}){% endif %}
                     </option>
                 {% endfor %}
@@ -37,17 +37,82 @@
 
 <section class="activity-panel" aria-labelledby="activity-title">
     <div class="panel-heading">
-        <h2 id="activity-title">Recent PC Changes</h2>
-        <button class="history-button" type="button">
-            <i data-lucide="trash-2"></i>
-            <span>Clear History</span>
-        </button>
+        <h2 id="activity-title">Monitored Device Files</h2>
+        {% if selected_device %}
+            <a class="refresh-button" href="{% url 'home' %}?device={{ selected_device.device_id }}">
+                <i data-lucide="refresh-cw"></i>
+                <span>Refresh</span>
+            </a>
+        {% endif %}
     </div>
 
-    <div class="empty-state">
-        <i data-lucide="monitor" class="empty-state-icon"></i>
-        <h3>No activity recorded yet.</h3>
-        <p>Run <code>agent_client.exe</code> on any machine to start monitoring.</p>
-    </div>
+    {% if not devices %}
+        <div class="empty-state">
+            <i data-lucide="monitor" class="empty-state-icon"></i>
+            <h3>No devices enrolled yet.</h3>
+            <p>Run <code>agent_client.exe</code> on any machine to start monitoring.</p>
+        </div>
+    {% elif monitored_files %}
+        <div class="file-table-wrapper dashboard-file-table">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Drive</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in monitored_files %}
+                        <tr>
+                            <td>
+                                <div class="file-name">{{ row.file.name }}</div>
+                                <div class="file-path">{{ row.file.path }}</div>
+                            </td>
+                            <td>{{ row.file.drive }}</td>
+                            <td>{{ row.size }}</td>
+                            <td>{{ row.file.modified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <i data-lucide="folder-open" class="empty-state-icon"></i>
+            <h3>No files synced for this device yet.</h3>
+            <p>The device is enrolled. File data will appear after the agent finishes syncing.</p>
+        </div>
+    {% endif %}
 </section>
+
+{% if devices %}
+    <script>
+        (() => {
+            const select = document.getElementById('device-select');
+            if (!select) {
+                return;
+            }
+
+            let currentValue = select.value;
+
+            select.addEventListener('change', () => {
+                const selectedOption = select.options[select.selectedIndex];
+                const deviceName = selectedOption ? selectedOption.text.trim() : 'this device';
+                const confirmed = window.confirm(`Do you want to monitor ${deviceName}?`);
+
+                if (!confirmed) {
+                    select.value = currentValue;
+                    return;
+                }
+
+                currentValue = select.value;
+                const url = new URL(window.location.href);
+                url.searchParams.set('device', select.value);
+                window.location.href = url.toString();
+            });
+        })();
+    </script>
+{% endif %}
 {% endblock %}

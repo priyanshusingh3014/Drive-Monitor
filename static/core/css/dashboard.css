@@ -570,6 +570,10 @@ a {
     padding: 0 26px 18px;
 }
 
+.dashboard-file-table {
+    padding-top: 0;
+}
+
 .data-table {
     width: 100%;
     border-collapse: collapse;

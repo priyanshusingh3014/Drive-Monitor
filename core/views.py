@@ -68,13 +68,40 @@ def device_storage_totals():
     return used_bytes, total_bytes
 
 
+def dashboard_file_rows(device):
+    if not device:
+        return []
+
+    rows = []
+    for archived_file in device.files.all():
+        rows.append({
+            'file': archived_file,
+            'size': format_size(archived_file.size_bytes),
+        })
+    return rows
+
+
 def home(request):
+    devices = list(EndpointDevice.objects.all())
+    selected_device = None
+    selected_device_id = request.GET.get('device', '')
+
+    if devices:
+        selected_device = next(
+            (device for device in devices if str(device.device_id) == selected_device_id),
+            devices[0],
+        )
+        selected_device_id = selected_device.device_id
+
     storage_used, storage_total = device_storage_totals()
     context = {
         'active_page': 'dashboard',
         'active_agents': online_devices().count(),
         'total_storage': format_storage_pair(storage_used, storage_total),
-        'devices': EndpointDevice.objects.all(),
+        'devices': devices,
+        'selected_device': selected_device,
+        'selected_device_id': selected_device_id,
+        'monitored_files': dashboard_file_rows(selected_device),
     }
     return render(request, 'core/home.html', context)
 

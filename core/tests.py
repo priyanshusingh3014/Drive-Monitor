@@ -12,6 +12,8 @@ class HomePageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'System Telemetry &amp; Overview')
+        self.assertContains(response, 'No Devices Enrolled')
+        self.assertContains(response, 'No devices enrolled yet.')
         self.assertContains(response, '0 GB / 0 GB')
 
     def test_devices_page_loads(self):
@@ -106,6 +108,9 @@ class AgentSyncTests(TestCase):
         self.assertContains(home_response, '1 Agent')
         self.assertContains(home_response, 'LAPTOP-TEST (tester)')
         self.assertContains(home_response, '274.9 GB / 476 GB')
+        self.assertContains(home_response, 'Monitored Device Files')
+        self.assertContains(home_response, 'report.pdf')
+        self.assertContains(home_response, 'D:\\Projects\\report.pdf')
 
         heartbeat = payload | {
             'files': [],
@@ -122,6 +127,44 @@ class AgentSyncTests(TestCase):
         device.refresh_from_db()
         self.assertEqual(device.total_files, 1)
         self.assertEqual(ArchivedFile.objects.count(), 1)
+
+    def test_dashboard_loads_files_for_selected_device(self):
+        first_device = EndpointDevice.objects.create(
+            device_id='first-device',
+            hostname='FIRST-PC',
+            username='one',
+        )
+        second_device = EndpointDevice.objects.create(
+            device_id='second-device',
+            hostname='SECOND-PC',
+            username='two',
+        )
+        ArchivedFile.objects.create(
+            device=first_device,
+            drive='E:',
+            path='E:\\first.txt',
+            name='first.txt',
+            size_bytes=1024,
+        )
+        ArchivedFile.objects.create(
+            device=second_device,
+            drive='F:',
+            path='F:\\second.txt',
+            name='second.txt',
+            size_bytes=2048,
+        )
+
+        default_response = self.client.get(reverse('home'))
+        self.assertContains(default_response, 'FIRST-PC (one)')
+        self.assertContains(default_response, 'SECOND-PC (two)')
+        self.assertContains(default_response, 'first.txt')
+        self.assertNotContains(default_response, 'second.txt')
+
+        selected_response = self.client.get(f"{reverse('home')}?device=second-device")
+        self.assertContains(selected_response, 'SECOND-PC (two)')
+        self.assertContains(selected_response, 'second.txt')
+        self.assertContains(selected_response, 'F:\\second.txt')
+        self.assertNotContains(selected_response, 'first.txt')
 
     def test_agent_sync_handles_bad_byte_values(self):
         payload = {
