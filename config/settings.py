@@ -62,6 +62,7 @@ if ENABLE_PRODUCTION_SECURITY:
     SECURE_HSTS_PRELOAD = True
 
 AGENT_API_TOKEN = os.environ.get('AGENT_API_TOKEN', '')
+AGENT_MAX_FILE_CONTENT_BYTES = int(os.environ.get('AGENT_MAX_FILE_CONTENT_BYTES', str(5 * 1024 * 1024)))
 
 
 # Application definition

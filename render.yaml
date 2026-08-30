@@ -21,5 +21,7 @@ services:
         generateValue: true
       - key: AGENT_API_TOKEN
         generateValue: true
+      - key: AGENT_MAX_FILE_CONTENT_BYTES
+        value: 5242880
       - key: WEB_CONCURRENCY
         value: 4

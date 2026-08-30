@@ -5,7 +5,7 @@
 {% block content %}
 <section class="page-heading" aria-labelledby="files-title">
     <h1 id="files-title">Drive Files &amp; Database Backups</h1>
-    <p>Real-time synchronized file archive from non-C: drives - download any file at any time</p>
+    <p>Real-time synchronized file archive from monitored drives</p>
 </section>
 
 <section class="summary-grid" aria-label="Files summary">
@@ -34,12 +34,12 @@
             </select>
             <select class="device-select filter-select" name="drive" aria-label="Filter drive" onchange="this.form.submit()">
                 {% if drive_options %}
-                    <option value="">All Secondary Drives</option>
+                    <option value="">All Drives</option>
                     {% for drive in drive_options %}
                         <option value="{{ drive }}" {% if selected_drive == drive %}selected{% endif %}>{{ drive }}</option>
                     {% endfor %}
                 {% else %}
-                    <option value="">No Secondary Drive</option>
+                    <option value="">No Drive Data</option>
                 {% endif %}
             </select>
         </form>
@@ -59,7 +59,7 @@
             <span></span>
         </div>
         <div class="sync-detail-row">
-            <p>All discovered user files uploaded to database</p>
+            <p>Discovered files are indexed; stored copies are available when upload limits allow</p>
             <strong>Live Sync Active</strong>
         </div>
     </div>
@@ -84,19 +84,39 @@
                         <th>Drive</th>
                         <th>Size</th>
                         <th>Modified</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for file in archived_files %}
+                    {% for row in archived_files %}
                         <tr>
                             <td>
-                                <div class="file-name">{{ file.name }}</div>
-                                <div class="file-path">{{ file.path }}</div>
+                                <div class="file-name">{{ row.file.name }}</div>
+                                <div class="file-path">{{ row.file.path }}</div>
                             </td>
-                            <td>{{ file.device.hostname }}</td>
-                            <td>{{ file.drive }}</td>
-                            <td>{{ file.size_bytes }} B</td>
-                            <td>{{ file.modified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                            <td>{{ row.file.device.hostname }}</td>
+                            <td>{{ row.file.drive }}</td>
+                            <td>{{ row.size }}</td>
+                            <td>{{ row.file.modified_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                            <td>
+                                <div class="file-actions table-actions">
+                                    <a class="action-button" href="{% url 'file_detail' row.file.id %}">
+                                        <i data-lucide="eye"></i>
+                                        <span>View</span>
+                                    </a>
+                                    {% if row.file.has_download %}
+                                        <a class="action-button action-primary" href="{% url 'download_file' row.file.id %}">
+                                            <i data-lucide="download"></i>
+                                            <span>Download</span>
+                                        </a>
+                                    {% else %}
+                                        <span class="action-button action-disabled">
+                                            <i data-lucide="download"></i>
+                                            <span>Download</span>
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -108,8 +128,8 @@
     {% else %}
         <div class="empty-state archive-empty-state">
             <i data-lucide="folder" class="empty-state-icon"></i>
-            <h3>No secondary drive files found yet.</h3>
-            <p>Run <code>agent_client.exe</code> to scan visible files on non-C: drives.</p>
+            <h3>No drive files found yet.</h3>
+            <p>Run <code>agent_client.exe</code> to scan visible files on monitored drives.</p>
         </div>
     {% endif %}
 </section>

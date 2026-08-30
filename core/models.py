@@ -33,6 +33,11 @@ class ArchivedFile(models.Model):
     name = models.CharField(max_length=512)
     extension = models.CharField(max_length=64, blank=True)
     size_bytes = models.BigIntegerField(default=0)
+    content = models.BinaryField(null=True, blank=True)
+    content_type = models.CharField(max_length=255, blank=True)
+    content_sha256 = models.CharField(max_length=64, blank=True)
+    content_size_bytes = models.BigIntegerField(default=0)
+    content_uploaded_at = models.DateTimeField(null=True, blank=True)
     modified_at = models.DateTimeField(null=True, blank=True)
     discovered_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -49,3 +54,7 @@ class ArchivedFile(models.Model):
 
     def __str__(self):
         return self.path
+
+    @property
+    def has_download(self):
+        return self.content_uploaded_at is not None

@@ -1,6 +1,9 @@
+import base64
+import hashlib
 import argparse
 import getpass
 import json
+import mimetypes
 import os
 import platform
 import shutil
@@ -18,6 +21,8 @@ from urllib.request import Request, urlopen
 DEFAULT_SERVER_URL = 'https://drive-monitor.onrender.com/api/agent/sync/'
 DEFAULT_EXCLUDED_DRIVES = 'D:'
 DEFAULT_AGENT_TOKEN = ''
+DEFAULT_UPLOAD_CONTENT = True
+DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 APP_DISPLAY_NAME = 'Drive Agent'
 INSTALL_DIR_NAME = 'SystemMonitorDriveAgent'
 TASK_NAME = 'SystemMonitorDriveAgent'
@@ -181,6 +186,10 @@ def build_watch_args(args):
     watch_args = ['--watch']
     if args.exclude_drives:
         watch_args.extend(['--exclude-drives', args.exclude_drives])
+    if not args.upload_content:
+        watch_args.append('--no-upload-content')
+    if args.max_upload_bytes != DEFAULT_MAX_UPLOAD_BYTES:
+        watch_args.extend(['--max-upload-bytes', str(args.max_upload_bytes)])
     if args.include_hidden:
         watch_args.append('--include-hidden')
     if args.max_files > 0:
@@ -195,6 +204,8 @@ def write_install_config(args):
         'token': args.token,
         'interval': args.interval,
         'exclude_drives': args.exclude_drives,
+        'upload_content': args.upload_content,
+        'max_upload_bytes': args.max_upload_bytes,
     }
     config_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
@@ -307,6 +318,10 @@ def run_install_ui(args):
         admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
         if args.exclude_drives:
             admin_args.extend(['--exclude-drives', args.exclude_drives])
+        if not args.upload_content:
+            admin_args.append('--no-upload-content')
+        if args.max_upload_bytes != DEFAULT_MAX_UPLOAD_BYTES:
+            admin_args.extend(['--max-upload-bytes', str(args.max_upload_bytes)])
         if args.token:
             admin_args.extend(['--token', args.token])
         if args.include_hidden:
@@ -320,7 +335,12 @@ def run_install_ui(args):
         return 0
 
     choice = show_message(
-        'Do you want to install the Drive Agent on this PC?',
+        (
+            'Do you want to install the Drive Agent on this PC?\n\n'
+            f'It will monitor visible files from all drives except {args.exclude_drives} '
+            'and upload storage details, file details, and downloadable file copies '
+            f'up to {args.max_upload_bytes // (1024 * 1024)} MB each.'
+        ),
         flags=MB_YESNO | MB_ICONQUESTION,
     )
     if choice != IDYES:
@@ -423,6 +443,23 @@ def is_hidden_or_system(path):
     return bool(attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))
 
 
+def read_downloadable_content(path, size_bytes, upload_content=True, max_upload_bytes=DEFAULT_MAX_UPLOAD_BYTES):
+    if not upload_content or size_bytes > max_upload_bytes:
+        return {}
+
+    try:
+        content = path.read_bytes()
+    except (OSError, PermissionError):
+        return {}
+
+    content_type = mimetypes.guess_type(str(path))[0] or 'application/octet-stream'
+    return {
+        'content_base64': base64.b64encode(content).decode('ascii'),
+        'content_type': content_type,
+        'content_sha256': hashlib.sha256(content).hexdigest(),
+    }
+
+
 def iter_available_drives(include_c=True):
     if os.name == 'nt':
         import ctypes
@@ -506,7 +543,13 @@ def collect_storage_info():
     }
 
 
-def iter_visible_files(root, include_hidden=False, max_files=0):
+def iter_visible_files(
+    root,
+    include_hidden=False,
+    max_files=0,
+    upload_content=DEFAULT_UPLOAD_CONTENT,
+    max_upload_bytes=DEFAULT_MAX_UPLOAD_BYTES,
+):
     scanned = 0
     for current_root, dirs, files in os.walk(root, topdown=True):
         if not include_hidden:
@@ -526,7 +569,7 @@ def iter_visible_files(root, include_hidden=False, max_files=0):
                 continue
 
             scanned += 1
-            yield {
+            file_record = {
                 'drive': str(root)[:2],
                 'path': str(full_path),
                 'name': filename,
@@ -534,26 +577,60 @@ def iter_visible_files(root, include_hidden=False, max_files=0):
                 'size_bytes': stat.st_size,
                 'modified_at': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
             }
+            file_record.update(
+                read_downloadable_content(
+                    full_path,
+                    stat.st_size,
+                    upload_content=upload_content,
+                    max_upload_bytes=max_upload_bytes,
+                )
+            )
+
+            yield file_record
 
             if max_files > 0 and scanned >= max_files:
                 return
 
 
-def collect_files_from_drives(drives, include_hidden=False, max_files=0):
+def collect_files_from_drives(
+    drives,
+    include_hidden=False,
+    max_files=0,
+    upload_content=DEFAULT_UPLOAD_CONTENT,
+    max_upload_bytes=DEFAULT_MAX_UPLOAD_BYTES,
+):
     files = []
 
     for drive in drives:
         remaining = max_files - len(files) if max_files > 0 else 0
-        files.extend(iter_visible_files(drive, include_hidden=include_hidden, max_files=remaining))
+        files.extend(iter_visible_files(
+            drive,
+            include_hidden=include_hidden,
+            max_files=remaining,
+            upload_content=upload_content,
+            max_upload_bytes=max_upload_bytes,
+        ))
         if max_files > 0 and len(files) >= max_files:
             break
 
     return files
 
 
-def scan_machine(excluded_drives=None, include_hidden=False, max_files=0):
+def scan_machine(
+    excluded_drives=None,
+    include_hidden=False,
+    max_files=0,
+    upload_content=DEFAULT_UPLOAD_CONTENT,
+    max_upload_bytes=DEFAULT_MAX_UPLOAD_BYTES,
+):
     drives = list(iter_scanned_drives(excluded_drives))
-    files = collect_files_from_drives(drives, include_hidden=include_hidden, max_files=max_files)
+    files = collect_files_from_drives(
+        drives,
+        include_hidden=include_hidden,
+        max_files=max_files,
+        upload_content=upload_content,
+        max_upload_bytes=max_upload_bytes,
+    )
     return drives, files
 
 
@@ -591,7 +668,13 @@ def run_once(args):
     device_id = get_device_id()
 
     if args.dry_run:
-        files = collect_files_from_drives(drives, include_hidden=args.include_hidden, max_files=args.max_files)
+        files = collect_files_from_drives(
+            drives,
+            include_hidden=args.include_hidden,
+            max_files=args.max_files,
+            upload_content=args.upload_content,
+            max_upload_bytes=args.max_upload_bytes,
+        )
         excluded = ', '.join(sorted(parse_drive_list(args.exclude_drives))) or 'none'
         write_output(
             f'Found {len(files)} visible file(s) on {len(drives)} scanned drive(s). '
@@ -602,7 +685,13 @@ def run_once(args):
     try:
         heartbeat_payload = build_agent_payload(device_id, drives, storage, [], replace_files=False)
         post_payload(args.server_url, args.token, heartbeat_payload)
-        files = collect_files_from_drives(drives, include_hidden=args.include_hidden, max_files=args.max_files)
+        files = collect_files_from_drives(
+            drives,
+            include_hidden=args.include_hidden,
+            max_files=args.max_files,
+            upload_content=args.upload_content,
+            max_upload_bytes=args.max_upload_bytes,
+        )
         payload = build_agent_payload(device_id, drives, storage, files, replace_files=True)
         result = post_payload(args.server_url, args.token, payload)
     except HTTPError as exc:
@@ -630,6 +719,17 @@ def parse_args():
         default_excluded_drives = ','.join(str(item) for item in default_excluded_drives)
     else:
         default_excluded_drives = str(default_excluded_drives)
+
+    upload_content_default = str(
+        os.environ.get('AGENT_UPLOAD_CONTENT')
+        or app_config.get('upload_content')
+        or DEFAULT_UPLOAD_CONTENT
+    ).lower() in {'1', 'true', 'yes', 'on'}
+    max_upload_bytes_default = int(
+        os.environ.get('AGENT_MAX_UPLOAD_BYTES')
+        or app_config.get('max_upload_bytes')
+        or DEFAULT_MAX_UPLOAD_BYTES
+    )
     parser = argparse.ArgumentParser(description='System Monitor drive file scanner')
     parser.add_argument('--server-url', default=os.environ.get('AGENT_SERVER_URL') or app_config.get('server_url') or DEFAULT_SERVER_URL)
     parser.add_argument('--token', default=os.environ.get('AGENT_TOKEN') or app_config.get('token') or DEFAULT_AGENT_TOKEN)
@@ -638,6 +738,8 @@ def parse_args():
     parser.add_argument('--watch', action='store_true', help='keep scanning on an interval')
     parser.add_argument('--interval', type=int, default=int(os.environ.get('AGENT_SCAN_INTERVAL_SECONDS') or app_config.get('interval') or '300'))
     parser.add_argument('--exclude-drives', default=default_excluded_drives, help='comma-separated drive letters to skip for file scanning')
+    parser.add_argument('--no-upload-content', action='store_false', dest='upload_content', default=upload_content_default, help='only send file metadata, not downloadable copies')
+    parser.add_argument('--max-upload-bytes', type=int, default=max_upload_bytes_default, help='maximum single-file size to upload for download')
     parser.add_argument('--include-hidden', action='store_true', help='include hidden/system files')
     parser.add_argument('--max-files', type=int, default=int(os.environ.get('AGENT_MAX_FILES', '0')), help='limit files for testing; default scans all')
     parser.add_argument('--dry-run', action='store_true', help='scan and print the count without sending data')

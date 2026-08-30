@@ -1,13 +1,17 @@
+import base64
+import binascii
+import hashlib
 import json
 from datetime import timedelta, timezone as datetime_timezone
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.http import Http404, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.http import content_disposition_header
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -15,6 +19,25 @@ from .models import ArchivedFile, EndpointDevice
 
 
 ONLINE_WINDOW = timedelta(minutes=10)
+PREVIEW_TEXT_EXTENSIONS = {
+    '.bat',
+    '.cfg',
+    '.conf',
+    '.csv',
+    '.css',
+    '.html',
+    '.ini',
+    '.js',
+    '.json',
+    '.log',
+    '.md',
+    '.py',
+    '.sql',
+    '.txt',
+    '.xml',
+    '.yaml',
+    '.yml',
+}
 
 
 def format_size(size_bytes):
@@ -50,6 +73,47 @@ def non_negative_int(value):
         return max(int(value or 0), 0)
     except (TypeError, ValueError):
         return 0
+
+
+def max_file_content_bytes():
+    return non_negative_int(getattr(settings, 'AGENT_MAX_FILE_CONTENT_BYTES', 5 * 1024 * 1024))
+
+
+def decode_file_content(item):
+    content_base64 = item.get('content_base64')
+    if not isinstance(content_base64, str) or not content_base64:
+        return None, '', ''
+
+    try:
+        content = base64.b64decode(content_base64.encode('ascii'), validate=True)
+    except (UnicodeEncodeError, binascii.Error):
+        return None, '', ''
+
+    if len(content) > max_file_content_bytes():
+        return None, '', ''
+
+    expected_sha256 = str(item.get('content_sha256') or '').strip().lower()
+    actual_sha256 = hashlib.sha256(content).hexdigest()
+    if expected_sha256 and expected_sha256 != actual_sha256:
+        return None, '', ''
+
+    content_type = str(item.get('content_type') or 'application/octet-stream')[:255]
+    return content, content_type, actual_sha256
+
+
+def preview_text_for_file(archived_file):
+    if not archived_file.has_download:
+        return ''
+    is_text_content = archived_file.content_type.lower().startswith('text/')
+    if not is_text_content and archived_file.extension.lower() not in PREVIEW_TEXT_EXTENSIONS:
+        return ''
+    if archived_file.content_size_bytes > 256 * 1024:
+        return ''
+
+    try:
+        return bytes(archived_file.content or b'').decode('utf-8')
+    except UnicodeDecodeError:
+        return ''
 
 
 def online_devices():
@@ -159,7 +223,14 @@ def files(request):
 
     file_count = files_qs.count()
     total_size = files_qs.aggregate(total=Sum('size_bytes'))['total'] or 0
-    files_list = list(files_qs[:500])
+    files_list = [
+        {
+            'file': archived_file,
+            'size': format_size(archived_file.size_bytes),
+            'download_size': format_size(archived_file.content_size_bytes),
+        }
+        for archived_file in files_qs[:500]
+    ]
 
     context = {
         'active_page': 'files',
@@ -173,6 +244,36 @@ def files(request):
         'shown_file_count': len(files_list),
     }
     return render(request, 'core/files.html', context)
+
+
+def file_detail(request, file_id):
+    archived_file = get_object_or_404(
+        ArchivedFile.objects.select_related('device'),
+        pk=file_id,
+    )
+    return render(request, 'core/file_detail.html', {
+        'active_page': 'files',
+        'file': archived_file,
+        'file_size': format_size(archived_file.size_bytes),
+        'download_size': format_size(archived_file.content_size_bytes),
+        'preview_text': preview_text_for_file(archived_file),
+    })
+
+
+def download_file(request, file_id):
+    archived_file = get_object_or_404(ArchivedFile, pk=file_id)
+    if not archived_file.has_download:
+        raise Http404('No stored copy is available for this file.')
+
+    response = HttpResponse(
+        bytes(archived_file.content or b''),
+        content_type=archived_file.content_type or 'application/octet-stream',
+    )
+    response['Content-Disposition'] = content_disposition_header(
+        as_attachment=True,
+        filename=archived_file.name or 'download',
+    )
+    return response
 
 
 @csrf_exempt
@@ -213,6 +314,8 @@ def agent_sync(request):
         if modified_at and timezone.is_naive(modified_at):
             modified_at = timezone.make_aware(modified_at, datetime_timezone.utc)
 
+        content, content_type, content_sha256 = decode_file_content(item)
+        content_uploaded_at = now if content is not None else None
         total_size += size_bytes
         records.append(ArchivedFile(
             drive=str(item.get('drive', ''))[:8],
@@ -220,6 +323,11 @@ def agent_sync(request):
             name=str(item.get('name') or path.split('\\')[-1])[:512],
             extension=str(item.get('extension') or '')[:64],
             size_bytes=size_bytes,
+            content=content,
+            content_type=content_type,
+            content_sha256=content_sha256,
+            content_size_bytes=len(content) if content is not None else 0,
+            content_uploaded_at=content_uploaded_at,
             modified_at=modified_at,
         ))
 

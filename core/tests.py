@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 
 from django.test import TestCase, override_settings
@@ -29,7 +31,7 @@ class HomePageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Drive Files &amp; Database Backups')
         self.assertContains(response, 'Archived Drive Files')
-        self.assertContains(response, 'No secondary drive files found yet.')
+        self.assertContains(response, 'No drive files found yet.')
 
     def test_storage_page_loads(self):
         response = self.client.get(reverse('storage'))
@@ -47,6 +49,7 @@ class HomePageTests(TestCase):
 
 class AgentSyncTests(TestCase):
     def test_agent_sync_registers_device_and_files(self):
+        report_content = b'report contents\n'
         payload = {
             'device_id': 'test-device-1',
             'hostname': 'LAPTOP-TEST',
@@ -76,6 +79,9 @@ class AgentSyncTests(TestCase):
                     'name': 'report.pdf',
                     'extension': '.pdf',
                     'size_bytes': 2048,
+                    'content_base64': base64.b64encode(report_content).decode('ascii'),
+                    'content_type': 'text/plain',
+                    'content_sha256': hashlib.sha256(report_content).hexdigest(),
                     'modified_at': '2026-08-30T12:00:00+00:00',
                 }
             ],
@@ -95,9 +101,22 @@ class AgentSyncTests(TestCase):
         self.assertEqual(device.c_drive_total_bytes, 271656009728)
         self.assertEqual(device.secondary_total_bytes, 239444754432)
 
+        archived_file = ArchivedFile.objects.get()
+        self.assertTrue(archived_file.has_download)
+        self.assertEqual(bytes(archived_file.content), report_content)
+
         files_response = self.client.get(reverse('files'))
         self.assertContains(files_response, 'report.pdf')
         self.assertContains(files_response, 'LAPTOP-TEST')
+        self.assertContains(files_response, 'View')
+        self.assertContains(files_response, 'Download')
+
+        detail_response = self.client.get(reverse('file_detail', args=[archived_file.id]))
+        self.assertContains(detail_response, 'report contents')
+
+        download_response = self.client.get(reverse('download_file', args=[archived_file.id]))
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.content, report_content)
 
         storage_response = self.client.get(reverse('storage'))
         self.assertContains(storage_response, 'LAPTOP-TEST')

@@ -1,0 +1,84 @@
+{% extends 'core/base.html' %}
+
+{% block title %}{{ file.name }}{% endblock %}
+
+{% block content %}
+<section class="page-heading" aria-labelledby="file-title">
+    <h1 id="file-title">{{ file.name }}</h1>
+    <p>{{ file.device.hostname }}{% if file.device.username %} ({{ file.device.username }}){% endif %} &bull; {{ file.path }}</p>
+</section>
+
+<section class="file-detail-panel" aria-label="File details">
+    <div class="file-detail-header">
+        <div>
+            <p class="metric-label">File Details</p>
+            <h2>{{ file.name }}</h2>
+        </div>
+        <div class="file-actions">
+            <a class="action-button" href="{% url 'files' %}">
+                <i data-lucide="arrow-left"></i>
+                <span>Back</span>
+            </a>
+            {% if file.has_download %}
+                <a class="action-button action-primary" href="{% url 'download_file' file.id %}">
+                    <i data-lucide="download"></i>
+                    <span>Download</span>
+                </a>
+            {% else %}
+                <span class="action-button action-disabled">
+                    <i data-lucide="download"></i>
+                    <span>Download</span>
+                </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="file-detail-grid">
+        <div>
+            <span>Device</span>
+            <strong>{{ file.device.hostname }}</strong>
+        </div>
+        <div>
+            <span>Drive</span>
+            <strong>{{ file.drive }}</strong>
+        </div>
+        <div>
+            <span>Original Size</span>
+            <strong>{{ file_size }}</strong>
+        </div>
+        <div>
+            <span>Stored Copy</span>
+            <strong>{% if file.has_download %}{{ download_size }}{% else %}Not uploaded{% endif %}</strong>
+        </div>
+        <div>
+            <span>Modified</span>
+            <strong>{{ file.modified_at|date:"Y-m-d H:i"|default:"-" }}</strong>
+        </div>
+        <div>
+            <span>Content Type</span>
+            <strong>{{ file.content_type|default:"-" }}</strong>
+        </div>
+    </div>
+
+    <div class="preview-panel">
+        <div class="panel-heading preview-heading">
+            <h2>Preview</h2>
+        </div>
+        {% if preview_text %}
+            <pre class="file-preview">{{ preview_text }}</pre>
+        {% elif file.has_download %}
+            <div class="empty-state compact-empty-state">
+                <i data-lucide="file" class="empty-state-icon"></i>
+                <h3>Preview is not available.</h3>
+                <p>This file can still be downloaded.</p>
+            </div>
+        {% else %}
+            <div class="empty-state compact-empty-state">
+                <i data-lucide="file-x" class="empty-state-icon"></i>
+                <h3>No stored copy is available.</h3>
+                <p>The file is listed, but it was not uploaded for download.</p>
+            </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
