@@ -35,10 +35,12 @@ DRIVE_FIXED = 3
 DRIVE_REMOTE = 4
 MB_OK = 0x0
 MB_YESNO = 0x4
+MB_YESNOCANCEL = 0x3
 MB_ICONINFORMATION = 0x40
 MB_ICONQUESTION = 0x20
 MB_ICONERROR = 0x10
 IDYES = 6
+IDNO = 7
 SW_HIDE = 0
 
 
@@ -197,6 +199,23 @@ def build_watch_args(args):
     return watch_args
 
 
+def build_elevated_install_args(args):
+    admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
+    if args.exclude_drives:
+        admin_args.extend(['--exclude-drives', args.exclude_drives])
+    if not args.upload_content:
+        admin_args.append('--no-upload-content')
+    if args.max_upload_bytes != DEFAULT_MAX_UPLOAD_BYTES:
+        admin_args.extend(['--max-upload-bytes', str(args.max_upload_bytes)])
+    if args.token:
+        admin_args.extend(['--token', args.token])
+    if args.include_hidden:
+        admin_args.append('--include-hidden')
+    if args.max_files > 0:
+        admin_args.extend(['--max-files', str(args.max_files)])
+    return admin_args
+
+
 def write_install_config(args):
     config_path = get_install_dir() / CONFIG_FILE_NAME
     config = {
@@ -270,8 +289,10 @@ def install_agent(args):
     installed_exe = get_installed_exe_path()
 
     source = current_program_path()
+    delete_scheduled_task()
     copy_agent_bundle(source, install_dir, installed_exe)
     write_install_config(args)
+    get_device_id()
     create_scheduled_task(installed_exe, args)
 
     if not installed_exe.exists():
@@ -306,56 +327,21 @@ def uninstall_agent():
             shutil.rmtree(install_dir, ignore_errors=True)
 
 
-def run_install_ui(args):
-    if not is_windows():
-        write_output('Install/uninstall UI is only available on Windows.', error=True)
-        return 1
-
-    if is_installed():
-        return run_uninstall_ui()
-
-    if token_required_for_server(args.server_url) and not args.token:
-        show_message(
-            (
-                'This Drive Agent exe is missing the dashboard token, so this PC '
-                'cannot appear on the Render dashboard.\n\n'
-                'Rebuild the exe with build_agent.ps1 -AgentToken and then run it again.'
-            ),
-            flags=MB_OK | MB_ICONERROR,
-        )
-        return 1
-
-    if not is_admin():
-        admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
-        if args.exclude_drives:
-            admin_args.extend(['--exclude-drives', args.exclude_drives])
-        if not args.upload_content:
-            admin_args.append('--no-upload-content')
-        if args.max_upload_bytes != DEFAULT_MAX_UPLOAD_BYTES:
-            admin_args.extend(['--max-upload-bytes', str(args.max_upload_bytes)])
-        if args.token:
-            admin_args.extend(['--token', args.token])
-        if args.include_hidden:
-            admin_args.append('--include-hidden')
-        if args.max_files > 0:
-            admin_args.extend(['--max-files', str(args.max_files)])
-
-        if not relaunch_as_admin(admin_args):
-            show_message('Administrator permission was not granted.', flags=MB_OK | MB_ICONERROR)
-            return 1
-        return 0
-
-    choice = show_message(
+def show_token_missing_message():
+    show_message(
         (
-            'Do you want to install the Drive Agent on this PC?\n\n'
-            f'It will monitor visible files from all drives except {args.exclude_drives} '
-            'and upload storage details, file details, and downloadable file copies '
-            f'up to {args.max_upload_bytes // (1024 * 1024)} MB each.'
+            'This Drive Agent exe is missing the dashboard token, so this PC '
+            'cannot appear on the Render dashboard.\n\n'
+            'Rebuild the exe with build_agent.ps1 -AgentToken and then run it again.'
         ),
-        flags=MB_YESNO | MB_ICONQUESTION,
+        flags=MB_OK | MB_ICONERROR,
     )
-    if choice != IDYES:
-        return 0
+
+
+def install_and_register(args, reinstall=False):
+    if token_required_for_server(args.server_url) and not args.token:
+        show_token_missing_message()
+        return 1
 
     try:
         install_agent(args)
@@ -377,13 +363,81 @@ def run_install_ui(args):
         )
         return 1
 
+    action = 'reinstalled' if reinstall else 'installed'
     show_message(
         (
-            'Drive Agent successfully installed on your PC.\n\n'
+            f'Drive Agent successfully {action} on your PC.\n\n'
             'This device is now registered on the dashboard and will keep syncing in the background.'
         )
     )
     return 0
+
+
+def uninstall_with_status():
+    try:
+        uninstall_agent()
+    except Exception as exc:
+        show_message(f'Drive Agent uninstall failed:\n\n{exc}', flags=MB_OK | MB_ICONERROR)
+        return 1
+
+    show_message('Drive Agent successfully uninstalled from your PC.')
+    return 0
+
+
+def run_existing_install_ui(args):
+    if not is_admin():
+        if not relaunch_as_admin(build_elevated_install_args(args)):
+            show_message('Administrator permission was not granted.', flags=MB_OK | MB_ICONERROR)
+            return 1
+        return 0
+
+    choice = show_message(
+        (
+            'Drive Agent is already installed on this PC.\n\n'
+            'Yes = Reinstall and register this PC on the dashboard\n'
+            'No = Uninstall Drive Agent from this PC\n'
+            'Cancel = Do nothing'
+        ),
+        flags=MB_YESNOCANCEL | MB_ICONQUESTION,
+    )
+    if choice == IDYES:
+        return install_and_register(args, reinstall=True)
+    if choice == IDNO:
+        return uninstall_with_status()
+    return 0
+
+
+def run_install_ui(args):
+    if not is_windows():
+        write_output('Install/uninstall UI is only available on Windows.', error=True)
+        return 1
+
+    if is_installed():
+        return run_existing_install_ui(args)
+
+    if token_required_for_server(args.server_url) and not args.token:
+        show_token_missing_message()
+        return 1
+
+    if not is_admin():
+        if not relaunch_as_admin(build_elevated_install_args(args)):
+            show_message('Administrator permission was not granted.', flags=MB_OK | MB_ICONERROR)
+            return 1
+        return 0
+
+    choice = show_message(
+        (
+            'Do you want to install the Drive Agent on this PC?\n\n'
+            f'It will monitor visible files from all drives except {args.exclude_drives} '
+            'and upload storage details, file details, and downloadable file copies '
+            f'up to {args.max_upload_bytes // (1024 * 1024)} MB each.'
+        ),
+        flags=MB_YESNO | MB_ICONQUESTION,
+    )
+    if choice != IDYES:
+        return 0
+
+    return install_and_register(args)
 
 
 def run_uninstall_ui():
@@ -404,14 +458,7 @@ def run_uninstall_ui():
     if choice != IDYES:
         return 0
 
-    try:
-        uninstall_agent()
-    except Exception as exc:
-        show_message(f'Drive Agent uninstall failed:\n\n{exc}', flags=MB_OK | MB_ICONERROR)
-        return 1
-
-    show_message('Drive Agent successfully uninstalled from your PC.')
-    return 0
+    return uninstall_with_status()
 
 
 def get_config_dir():
@@ -824,7 +871,7 @@ def main():
     if args.uninstall_ui:
         return run_uninstall_ui()
     if len(sys.argv) == 1 and is_windows():
-        return run_uninstall_ui() if is_installed() else run_install_ui(args)
+        return run_install_ui(args)
 
     if not args.watch:
         return 0 if run_once(args) else 1
