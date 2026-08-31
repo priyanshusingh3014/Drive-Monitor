@@ -35,12 +35,10 @@ DRIVE_FIXED = 3
 DRIVE_REMOTE = 4
 MB_OK = 0x0
 MB_YESNO = 0x4
-MB_YESNOCANCEL = 0x3
 MB_ICONINFORMATION = 0x40
 MB_ICONQUESTION = 0x20
 MB_ICONERROR = 0x10
 IDYES = 6
-IDNO = 7
 SW_HIDE = 0
 
 
@@ -394,16 +392,12 @@ def run_existing_install_ui(args):
     choice = show_message(
         (
             'Drive Agent is already installed on this PC.\n\n'
-            'Yes = Reinstall and register this PC on the dashboard\n'
-            'No = Uninstall Drive Agent from this PC\n'
-            'Cancel = Do nothing'
+            'Do you want to reinstall it and register this PC on the dashboard?'
         ),
-        flags=MB_YESNOCANCEL | MB_ICONQUESTION,
+        flags=MB_YESNO | MB_ICONQUESTION,
     )
     if choice == IDYES:
         return install_and_register(args, reinstall=True)
-    if choice == IDNO:
-        return uninstall_with_status()
     return 0
 
 

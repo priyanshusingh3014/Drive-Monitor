@@ -39,15 +39,15 @@ Double-click `dist\agent_client.exe` with no options to install it. Windows will
 Do you want to install the Drive Agent on this PC?
 ```
 
-If Drive Agent is already installed, double-clicking the same `.exe` opens a management prompt:
+If Drive Agent is already installed, double-clicking the same `.exe` asks to reinstall and register it again:
 
 ```text
 Drive Agent is already installed on this PC.
 
-Yes = Reinstall and register this PC on the dashboard
-No = Uninstall Drive Agent from this PC
-Cancel = Do nothing
+Do you want to reinstall it and register this PC on the dashboard?
 ```
+
+To uninstall explicitly, run `agent_client.exe --uninstall-ui`.
 
 The installer copies the no-console agent to `C:\Program Files\SystemMonitorDriveAgent\agent_client.exe`, creates a Windows scheduled task named `SystemMonitorDriveAgent`, and starts the first background sync immediately.
 
