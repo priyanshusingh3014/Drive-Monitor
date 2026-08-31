@@ -54,6 +54,8 @@ class AgentSyncTests(TestCase):
             'device_id': 'test-device-1',
             'hostname': 'LAPTOP-TEST',
             'username': 'tester',
+            'ip_address': '192.168.1.15',
+            'mac_address': 'AA:BB:CC:DD:EE:FF',
             'platform': 'Windows',
             'drives': ['D:'],
             'storage': {
@@ -98,6 +100,8 @@ class AgentSyncTests(TestCase):
         self.assertEqual(ArchivedFile.objects.count(), 1)
 
         device = EndpointDevice.objects.get()
+        self.assertEqual(device.ip_address, '192.168.1.15')
+        self.assertEqual(device.mac_address, 'AA:BB:CC:DD:EE:FF')
         self.assertEqual(device.c_drive_total_bytes, 271656009728)
         self.assertEqual(device.secondary_total_bytes, 239444754432)
 
@@ -110,6 +114,11 @@ class AgentSyncTests(TestCase):
         self.assertContains(files_response, 'LAPTOP-TEST')
         self.assertContains(files_response, 'View')
         self.assertContains(files_response, 'Download')
+
+        devices_response = self.client.get(reverse('devices'))
+        self.assertContains(devices_response, 'test-device-1')
+        self.assertContains(devices_response, '192.168.1.15')
+        self.assertContains(devices_response, 'AA:BB:CC:DD:EE:FF')
 
         detail_response = self.client.get(reverse('file_detail', args=[archived_file.id]))
         self.assertContains(detail_response, 'report contents')

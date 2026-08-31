@@ -5,8 +5,8 @@ from .models import ArchivedFile, EndpointDevice
 
 @admin.register(EndpointDevice)
 class EndpointDeviceAdmin(admin.ModelAdmin):
-    list_display = ('hostname', 'username', 'total_files', 'total_size_bytes', 'last_seen')
-    search_fields = ('hostname', 'username', 'device_id')
+    list_display = ('hostname', 'device_id', 'ip_address', 'mac_address', 'username', 'total_files', 'last_seen')
+    search_fields = ('hostname', 'username', 'device_id', 'ip_address', 'mac_address')
     readonly_fields = ('created_at', 'updated_at')
 
 

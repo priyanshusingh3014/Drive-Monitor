@@ -1,5 +1,6 @@
 param(
-    [string]$AgentToken = $env:AGENT_API_TOKEN
+    [string]$AgentToken = $env:AGENT_API_TOKEN,
+    [switch]$AllowMissingToken
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,8 +26,10 @@ if ($AgentToken) {
     $Source = $Source.Replace("DEFAULT_AGENT_TOKEN = ''", "DEFAULT_AGENT_TOKEN = $TokenLiteral")
     Set-Content -LiteralPath $EmbeddedSource -Value $Source -Encoding UTF8
     $BuildSource = $EmbeddedSource
+} elseif (-not $AllowMissingToken) {
+    throw "AgentToken is required for the Render dashboard build. Run: powershell -ExecutionPolicy Bypass -File .\build_agent.ps1 -AgentToken `"YOUR_RENDER_AGENT_API_TOKEN`""
 } else {
-    Write-Warning "No AgentToken supplied. Render may reject sync if AGENT_API_TOKEN is enabled."
+    Write-Warning "No AgentToken supplied. This exe is only for local testing and will not register on the Render dashboard if AGENT_API_TOKEN is enabled."
 }
 
 .\.venv\Scripts\python.exe -m pip install pyinstaller

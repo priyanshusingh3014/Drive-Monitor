@@ -27,6 +27,9 @@
                 <thead>
                     <tr>
                         <th>Device</th>
+                        <th>Agent ID</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
                         <th>User</th>
                         <th>Drives</th>
                         <th>Files</th>
@@ -37,6 +40,9 @@
                     {% for device in devices %}
                         <tr>
                             <td class="file-name">{{ device.hostname }}</td>
+                            <td><code>{{ device.device_id }}</code></td>
+                            <td>{{ device.ip_address|default:"-" }}</td>
+                            <td>{{ device.mac_address|default:"-" }}</td>
                             <td>{{ device.username|default:"-" }}</td>
                             <td>{{ device.drives|join:", "|default:"-" }}</td>
                             <td>{{ device.total_files }}</td>

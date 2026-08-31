@@ -6,6 +6,8 @@ class EndpointDevice(models.Model):
     device_id = models.CharField(max_length=64, unique=True)
     hostname = models.CharField(max_length=255)
     username = models.CharField(max_length=255, blank=True)
+    ip_address = models.CharField(max_length=45, blank=True)
+    mac_address = models.CharField(max_length=32, blank=True)
     platform = models.CharField(max_length=255, blank=True)
     drives = models.JSONField(default=list, blank=True)
     total_files = models.PositiveIntegerField(default=0)

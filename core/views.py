@@ -75,6 +75,13 @@ def non_negative_int(value):
         return 0
 
 
+def request_ip_address(request):
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()[:45]
+    return str(request.META.get('REMOTE_ADDR') or '')[:45]
+
+
 def max_file_content_bytes():
     return non_negative_int(getattr(settings, 'AGENT_MAX_FILE_CONTENT_BYTES', 5 * 1024 * 1024))
 
@@ -361,6 +368,8 @@ def agent_sync(request):
         defaults = {
             'hostname': hostname[:255],
             'username': str(payload.get('username') or '')[:255],
+            'ip_address': str(payload.get('ip_address') or request_ip_address(request))[:45],
+            'mac_address': str(payload.get('mac_address') or '')[:32],
             'platform': str(payload.get('platform') or '')[:255],
             'drives': drives,
             'c_drive_total_bytes': c_total,

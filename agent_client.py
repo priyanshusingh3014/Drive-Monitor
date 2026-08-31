@@ -314,6 +314,17 @@ def run_install_ui(args):
     if is_installed():
         return run_uninstall_ui()
 
+    if token_required_for_server(args.server_url) and not args.token:
+        show_message(
+            (
+                'This Drive Agent exe is missing the dashboard token, so this PC '
+                'cannot appear on the Render dashboard.\n\n'
+                'Rebuild the exe with build_agent.ps1 -AgentToken and then run it again.'
+            ),
+            flags=MB_OK | MB_ICONERROR,
+        )
+        return 1
+
     if not is_admin():
         admin_args = ['--install-ui', '--server-url', args.server_url, '--interval', str(args.interval)]
         if args.exclude_drives:
@@ -352,7 +363,26 @@ def run_install_ui(args):
         show_message(f'Drive Agent installation failed:\n\n{exc}', flags=MB_OK | MB_ICONERROR)
         return 1
 
-    show_message('Drive Agent successfully installed on your PC.')
+    try:
+        register_agent_on_dashboard(args)
+    except Exception as exc:
+        show_message(
+            (
+                'Drive Agent was installed, but this PC could not be registered '
+                f'on the dashboard yet.\n\nReason: {describe_sync_error(exc)}\n\n'
+                'The background agent will keep retrying. If the reason is HTTP 401, '
+                'rebuild the exe with the correct Render AGENT_API_TOKEN.'
+            ),
+            flags=MB_OK | MB_ICONERROR,
+        )
+        return 1
+
+    show_message(
+        (
+            'Drive Agent successfully installed on your PC.\n\n'
+            'This device is now registered on the dashboard and will keep syncing in the background.'
+        )
+    )
     return 0
 
 
@@ -415,6 +445,25 @@ def get_device_id():
     device_id = str(uuid.uuid4())
     config_path.write_text(json.dumps({'device_id': device_id}, indent=2), encoding='utf-8')
     return device_id
+
+
+def get_primary_ip_address():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(('8.8.8.8', 80))
+            return sock.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return ''
+
+
+def get_primary_mac_address():
+    node = uuid.getnode()
+    if node & (1 << 40):
+        return ''
+    return ':'.join(f'{(node >> shift) & 0xff:02X}' for shift in range(40, -1, -8))
 
 
 def get_windows_attrs(path):
@@ -654,12 +703,34 @@ def build_agent_payload(device_id, drives, storage, files, replace_files=True):
         'device_id': device_id,
         'hostname': socket.gethostname(),
         'username': getpass.getuser(),
+        'ip_address': get_primary_ip_address(),
+        'mac_address': get_primary_mac_address(),
         'platform': platform.platform(),
         'drives': [drive[:2] for drive in drives],
         'storage': storage,
         'files': files,
         'replace_files': replace_files,
     }
+
+
+def token_required_for_server(server_url):
+    return 'drive-monitor.onrender.com' in str(server_url or '').lower()
+
+
+def describe_sync_error(exc):
+    if isinstance(exc, HTTPError):
+        return f'HTTP {exc.code} {exc.reason}'
+    if isinstance(exc, URLError):
+        return str(exc.reason)
+    return str(exc)
+
+
+def register_agent_on_dashboard(args):
+    drives = list(iter_scanned_drives(args.exclude_drives))
+    storage = collect_storage_info()
+    device_id = get_device_id()
+    payload = build_agent_payload(device_id, drives, storage, [], replace_files=False)
+    return post_payload(args.server_url, args.token, payload)
 
 
 def run_once(args):
