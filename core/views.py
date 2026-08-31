@@ -86,6 +86,56 @@ def max_file_content_bytes():
     return non_negative_int(getattr(settings, 'AGENT_MAX_FILE_CONTENT_BYTES', 5 * 1024 * 1024))
 
 
+def storage_values_from_payload(payload):
+    drives = payload.get('drives', [])
+    if not isinstance(drives, list):
+        drives = []
+
+    storage = payload.get('storage', {})
+    if not isinstance(storage, dict):
+        storage = {}
+
+    c_drive = storage.get('c_drive', {})
+    if not isinstance(c_drive, dict):
+        c_drive = {}
+
+    secondary_drives = storage.get('secondary_drives', [])
+    if not isinstance(secondary_drives, list):
+        secondary_drives = []
+
+    c_total = non_negative_int(c_drive.get('total_bytes'))
+    c_used = non_negative_int(c_drive.get('used_bytes'))
+    secondary_total = 0
+    secondary_used = 0
+    for drive_info in secondary_drives:
+        if not isinstance(drive_info, dict):
+            continue
+        secondary_total += non_negative_int(drive_info.get('total_bytes'))
+        secondary_used += non_negative_int(drive_info.get('used_bytes'))
+
+    return {
+        'drives': drives,
+        'c_drive_total_bytes': c_total,
+        'c_drive_used_bytes': c_used,
+        'secondary_total_bytes': secondary_total,
+        'secondary_used_bytes': secondary_used,
+        'storage_status': storage_status(c_used + secondary_used, c_total + secondary_total),
+    }
+
+
+def device_defaults_from_payload(payload, request, now):
+    defaults = {
+        'hostname': str(payload.get('hostname') or '')[:255],
+        'username': str(payload.get('username') or '')[:255],
+        'ip_address': str(payload.get('ip_address') or request_ip_address(request))[:45],
+        'mac_address': str(payload.get('mac_address') or '')[:32],
+        'platform': str(payload.get('platform') or '')[:255],
+        'last_seen': now,
+    }
+    defaults.update(storage_values_from_payload(payload))
+    return defaults
+
+
 def decode_file_content(item):
     content_base64 = item.get('content_base64')
     if not isinstance(content_base64, str) or not content_base64:
@@ -338,47 +388,8 @@ def agent_sync(request):
             modified_at=modified_at,
         ))
 
-    drives = payload.get('drives', [])
-    if not isinstance(drives, list):
-        drives = []
-
-    storage = payload.get('storage', {})
-    if not isinstance(storage, dict):
-        storage = {}
-
-    c_drive = storage.get('c_drive', {})
-    if not isinstance(c_drive, dict):
-        c_drive = {}
-
-    secondary_drives = storage.get('secondary_drives', [])
-    if not isinstance(secondary_drives, list):
-        secondary_drives = []
-
-    c_total = non_negative_int(c_drive.get('total_bytes'))
-    c_used = non_negative_int(c_drive.get('used_bytes'))
-    secondary_total = 0
-    secondary_used = 0
-    for drive_info in secondary_drives:
-        if not isinstance(drive_info, dict):
-            continue
-        secondary_total += non_negative_int(drive_info.get('total_bytes'))
-        secondary_used += non_negative_int(drive_info.get('used_bytes'))
-
     with transaction.atomic():
-        defaults = {
-            'hostname': hostname[:255],
-            'username': str(payload.get('username') or '')[:255],
-            'ip_address': str(payload.get('ip_address') or request_ip_address(request))[:45],
-            'mac_address': str(payload.get('mac_address') or '')[:32],
-            'platform': str(payload.get('platform') or '')[:255],
-            'drives': drives,
-            'c_drive_total_bytes': c_total,
-            'c_drive_used_bytes': c_used,
-            'secondary_total_bytes': secondary_total,
-            'secondary_used_bytes': secondary_used,
-            'storage_status': storage_status(c_used + secondary_used, c_total + secondary_total),
-            'last_seen': now,
-        }
+        defaults = device_defaults_from_payload(payload, request, now)
 
         if replace_files:
             defaults['total_files'] = len(records)

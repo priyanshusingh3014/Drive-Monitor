@@ -325,20 +325,56 @@ def uninstall_agent():
             shutil.rmtree(install_dir, ignore_errors=True)
 
 
-def show_token_missing_message():
+def prompt_for_agent_token():
+    if not is_windows():
+        return ''
+
+    script = (
+        "Add-Type -AssemblyName Microsoft.VisualBasic; "
+        "$token = [Microsoft.VisualBasic.Interaction]::InputBox("
+        "'Paste the Render AGENT_API_TOKEN to register this PC on the dashboard:', "
+        f"'{APP_DISPLAY_NAME}', ''); "
+        "[Console]::Out.Write($token)"
+    )
+    try:
+        result = run_hidden_process([
+            'powershell',
+            '-NoProfile',
+            '-STA',
+            '-WindowStyle',
+            'Hidden',
+            '-Command',
+            script,
+        ])
+    except OSError:
+        return ''
+
+    if result.returncode != 0:
+        return ''
+    return result.stdout.strip()
+
+
+def ensure_agent_token(args):
+    if not token_required_for_server(args.server_url) or args.token:
+        return True
+
+    token = prompt_for_agent_token()
+    if token:
+        args.token = token
+        return True
+
     show_message(
         (
-            'This Drive Agent exe is missing the dashboard token, so this PC '
-            'cannot appear on the Render dashboard.\n\n'
-            'Rebuild the exe with build_agent.ps1 -AgentToken and then run it again.'
+            'The Render AGENT_API_TOKEN is required to register this PC on the dashboard.\n\n'
+            'Run the installer again and paste the token when asked.'
         ),
         flags=MB_OK | MB_ICONERROR,
     )
+    return False
 
 
 def install_and_register(args, reinstall=False):
-    if token_required_for_server(args.server_url) and not args.token:
-        show_token_missing_message()
+    if not ensure_agent_token(args):
         return 1
 
     try:
@@ -408,10 +444,6 @@ def run_install_ui(args):
 
     if is_installed():
         return run_existing_install_ui(args)
-
-    if token_required_for_server(args.server_url) and not args.token:
-        show_token_missing_message()
-        return 1
 
     if not is_admin():
         if not relaunch_as_admin(build_elevated_install_args(args)):

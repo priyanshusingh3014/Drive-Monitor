@@ -28,10 +28,14 @@ Hidden and system files are skipped by default.
 Build the Windows agent with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_agent.ps1 -AgentToken "paste-your-render-agent-api-token-here"
+powershell -ExecutionPolicy Bypass -File .\build_agent.ps1
 ```
 
-The Render `AGENT_API_TOKEN` must match the token stored in Render. Without it, the dashboard API returns `401 Unauthorized` and the PC will not appear.
+If you build without a token, the exe asks for the Render `AGENT_API_TOKEN` during installation. To avoid that prompt, embed the token at build time:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_agent.ps1 -AgentToken "paste-your-render-agent-api-token-here"
+```
 
 Double-click `dist\agent_client.exe` with no options to install it. Windows will ask for administrator permission, then the app asks:
 
@@ -51,7 +55,7 @@ To uninstall explicitly, run `agent_client.exe --uninstall-ui`.
 
 The installer copies the no-console agent to `C:\Program Files\SystemMonitorDriveAgent\agent_client.exe`, creates a Windows scheduled task named `SystemMonitorDriveAgent`, and starts the first background sync immediately.
 
-By default, file scanning skips the `C:` drive. The agent still reports storage capacity for the machine so the dashboard can show device/storage status quickly. The Devices section shows the agent ID, IP address, MAC address, drives, files, and last seen time. The Files section lists discovered files and shows View/Download actions. Download is available for stored file copies up to 5 MB by default. If the exe is built without the Render `AGENT_API_TOKEN`, Render will reject the sync and the PC will not appear on the dashboard.
+By default, file scanning skips the `C:` drive. The agent still reports storage capacity for the machine so the dashboard can show device/storage status quickly. The Devices section shows the agent ID, IP address, MAC address, drives, files, and last seen time. The Files section lists discovered files and shows View/Download actions. Download is available for stored file copies up to 5 MB by default.
 
 If Windows Defender flags the executable, use code signing or submit the file to Microsoft as a false positive; do not disable Windows security.
 
